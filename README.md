@@ -39,14 +39,17 @@ uvicorn event_support_recommend.api.app:app --reload
 ### 推薦結果を目で見て確認する
 
 合成シナリオを流し、候補ごとのスコア・`interest_match`・散布図（人気順に退化していないか）・
-自動チェック（`docs/specs/07-testing.md` の「起きてはいけないこと」）と、DRSA コアが抽出した規則を
-1枚の HTML にまとめる。
+自動チェック（`docs/specs/07-testing.md` の「起きてはいけないこと」）と、DRSA コアが抽出した規則を可視化する。
+**精度の最適化ではなく**、不変条件がどのパラメータ範囲まで崩れないかを見るためのもの。
 
 ```bash
-python tools/build_report.py        # tools/out/index.html を生成してブラウザで開く
+python tools/build_report.py        # 既定パラメータの静的レポートを tools/out/index.html に生成
+uvicorn event_support_recommend.api.app:app --port 8077   # 起動して…
 ```
 
-サーバー起動中なら同じ内容を `GET /demo` でも見られる。
+- `GET /demo` … スライダーで `w_coverage` / `w_interest` / interest 重み / `l` / `min_support` などを
+  動かすと、本物の Python エンジンで再計算する対話ページ
+- `POST /demo/run` … `{"overrides": {...}}` を投げると再計算結果を JSON で返す（キーは既知・範囲内に丸め）
 
 ## API
 

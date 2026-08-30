@@ -41,7 +41,16 @@ app.include_router(ops_router)
 
 @app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
 async def demo() -> str:
-    """目視確認レポート（合成シナリオ）。tools/build_report.py と同じ内容を動的生成する。"""
-    from ..demo import build_report_html
+    """パラメータ調整プレイグラウンド（合成シナリオ・目視確認用）。"""
+    from ..demo import build_playground_html
 
-    return build_report_html()
+    return build_playground_html()
+
+
+@app.post("/demo/run", include_in_schema=False)
+async def demo_run(body: dict | None = None) -> dict:
+    """合成シナリオを上書きパラメータで再計算して返す。overrides は既知キー・範囲内に丸める。"""
+    from ..demo import report_payload
+
+    overrides = (body or {}).get("overrides") if isinstance(body, dict) else None
+    return report_payload(overrides)

@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # --- 戦略 ---
     w_coverage: float = 0.5
     w_interest: float = 0.5
+    # interest_match ごとのスコア寄与 (docs/specs/04-strategies.md §2)。
+    # mismatch は 0 にしない (P-5): 0 だと不一致ブースが構造排除されセレンディピティが観測不能になる。
+    interest_partial: float = 0.6
+    interest_mismatch: float = 0.2
     similarity_neighbors: int = 20
     similarity_shrinkage: float = 5.0
     similarity_coverage_floor: float = 0.2

@@ -156,6 +156,8 @@ class RuntimeConfig:
     experiment_split_enabled: bool
     experiment_arm_a: str
     experiment_arm_b: str
+    interest_partial: float = 0.6
+    interest_mismatch: float = 0.2
 
 
 @dataclass(frozen=True)

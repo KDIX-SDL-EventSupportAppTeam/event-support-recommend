@@ -12,10 +12,26 @@ from ..models import InterestMatch, RecommendationContext, ScoredBooth
 from .. import __version__
 from .common import compute_candidate_features
 
+# mismatch/unknown はこの値を下回らせない。0 にすると不一致ブースが構造排除され
+# セレンディピティが観測不能になる (P-5)。
+_MISMATCH_FLOOR = 0.05
+
+
+def _interest_term(cfg) -> dict:
+    mismatch = max(cfg.interest_mismatch, _MISMATCH_FLOOR)
+    return {
+        InterestMatch.MATCH: 1.0,
+        InterestMatch.PARTIAL: max(cfg.interest_partial, mismatch),
+        InterestMatch.MISMATCH: mismatch,
+        InterestMatch.UNKNOWN: mismatch,
+    }
+
+
+# 既定パラメータでの参照値（テスト・ドキュメント用）。
 INTEREST_TERM = {
     InterestMatch.MATCH: 1.0,
     InterestMatch.PARTIAL: 0.6,
-    InterestMatch.MISMATCH: 0.2,  # 0 にしない。不一致ブースが構造的に排除されるとセレンディピティが観測不能になる (P-5)
+    InterestMatch.MISMATCH: 0.2,
     InterestMatch.UNKNOWN: 0.2,
 }
 
@@ -35,13 +51,14 @@ class CoverageStrategy:
         denom = max(n - 1, 1)
 
         w_sum = cfg.w_coverage + cfg.w_interest or 1.0
+        interest_term_by_match = _interest_term(cfg)
 
         out: list[ScoredBooth] = []
         for cand in candidates:
             f = feats[cand.booth_id]
             smaller = sum(1 for v in vcounts if v < f.visitor_count)
             coverage_term = 1.0 - (smaller / denom) if n > 1 else 1.0
-            interest_term = INTEREST_TERM[f.interest_match]
+            interest_term = interest_term_by_match[f.interest_match]
             score = (cfg.w_coverage * coverage_term + cfg.w_interest * interest_term) / w_sum
             score = max(0.0, min(1.0, score))
 

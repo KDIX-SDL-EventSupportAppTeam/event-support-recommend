@@ -42,6 +42,8 @@ def _runtime_config(s: Settings) -> RuntimeConfig:
         enabled_attributes=tuple(s.enabled_attributes),
         w_coverage=s.w_coverage,
         w_interest=s.w_interest,
+        interest_partial=s.interest_partial,
+        interest_mismatch=s.interest_mismatch,
         high_rating_ratio=s.high_rating_ratio,
         low_rating_ratio=s.low_rating_ratio,
         rating_scale_default=s.rating_scale_default,
