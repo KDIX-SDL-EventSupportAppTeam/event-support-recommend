@@ -20,14 +20,36 @@
 
 ## 現在の状態
 
-**仕様の整備中。コードはまだ1行も書いていない。**
+**段1（`COVERAGE` ＋ `features/`）と段2（`drsa/` コア）を実装済み**
+（[ADR 0005](docs/decisions/adrs/0005-段1と段2のみ実装する.md)）。
 
 | 項目 | 状態 |
 |---|---|
 | 仕様書 | 一通り揃った（[docs/README.md](docs/README.md)） |
-| 実装 | 未着手 |
+| 実装 段1・段2 | **済**。`POST /recommend/cells` は `COVERAGE` を返す。`drsa/` は純粋・テスト済み |
+| 実装 段3・段4（`data/`・規則キャッシュ・`SIMILARITY` / `DRSA` 結線） | **未着手**（[ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md) の決着待ち） |
 | データ入手経路（[ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md)） | **未決定。`SIMILARITY` / `DRSA` はこれが決まるまで実装しない** |
 | 事前アンケートの設問要求（[06](docs/specs/06-pre-survey-requirements.md)） | サーバー側の承認待ち。**締切はアンケート配布日** |
+
+```bash
+pip install -e ".[dev]" && pytest
+uvicorn event_support_recommend.api.app:app --reload
+```
+
+### 推薦結果を目で見て確認する
+
+合成シナリオを流し、候補ごとのスコア・`interest_match`・散布図（人気順に退化していないか）・
+自動チェック（`docs/specs/07-testing.md` の「起きてはいけないこと」）と、DRSA コアが抽出した規則を可視化する。
+**精度の最適化ではなく**、不変条件がどのパラメータ範囲まで崩れないかを見るためのもの。
+
+```bash
+python tools/build_report.py        # 既定パラメータの静的レポートを tools/out/index.html に生成
+uvicorn event_support_recommend.api.app:app --port 8077   # 起動して…
+```
+
+- `GET /demo` … スライダーで `w_coverage` / `w_interest` / interest 重み / `l` / `min_support` などを
+  動かすと、本物の Python エンジンで再計算する対話ページ
+- `POST /demo/run` … `{"overrides": {...}}` を投げると再計算結果を JSON で返す（キーは既知・範囲内に丸め）
 
 ## API
 
