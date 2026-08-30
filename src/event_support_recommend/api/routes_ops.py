@@ -15,6 +15,9 @@ from ..phases import decide_phase, evaluate_quality_gate
 from ..settings import Settings, get_settings
 from .schemas import RecommendRequest
 
+# /health /ready は常時公開（Cloud Run プローブ・監視）。/ops/* だけを条件付き登録する
+# (docs/specs/11-deployment.md D-2, D-4)。
+public_router = APIRouter()
 router = APIRouter()
 
 
@@ -39,17 +42,28 @@ def _require_ops(request: Request) -> None:
         raise HTTPException(status_code=401, detail="invalid ops token")
 
 
-@router.get("/health")
+@public_router.get("/health")
 async def health() -> dict:
     """生存確認。依存なしで即答する。"""
     return {"status": "ok", "engine_version": __version__}
 
 
-@router.get("/ready")
+@public_router.get("/ready")
 async def ready(request: Request) -> Response:
-    """スナップショット・規則が温まっているか。段3 未結線なので現状は常に not-ready。"""
+    """スナップショット・規則が温まっているか（監視用）。
+
+    段3 未結線なので本番では永久に 503 を返す（仕様どおりの正しい挙動）。
+    **Cloud Run の startup / liveness プローブに使ってはいけない**
+    (docs/specs/11-deployment.md D-2, X-1)。使うとリビジョンが永久に起動しない。
+    プローブは依存ゼロで即答する `/health` を使うこと。
+    """
     rc = _rule_cache(request)
-    payload = {"ready": rc.ready, "rules": rc.ready, "snapshot_wired": False}
+    payload = {
+        "ready": rc.ready,
+        "rules": rc.ready,
+        "snapshot_wired": False,
+        "note": "monitoring only; do not use as a Cloud Run probe (see 11-deployment.md D-2)",
+    }
     return JSONResponse(payload, status_code=200 if rc.ready else 503)
 
 

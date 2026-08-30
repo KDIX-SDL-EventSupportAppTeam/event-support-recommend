@@ -47,6 +47,8 @@ event-support-recommend/
 ├── AGENTS.md / CLAUDE.md
 ├── pyproject.toml                  # パッケージ名 event_support_recommend
 ├── Dockerfile                      # Cloud Run
+├── .dockerignore                   # ビルドコンテキストから .venv/.env/tests を除外
+├── cloudbuild.yaml                 # Cloud Build → Cloud Run（11-deployment.md §1・§3）
 ├── .env.example
 ├── docs/
 │   ├── README.md                   # ドキュメント索引
@@ -62,7 +64,9 @@ event-support-recommend/
 │   │   └── routes_ops.py           # /health /ready /ops/*
 │   ├── strategies/
 │   │   ├── base.py                 # Strategy インターフェース
+│   │   ├── registry.py             # STRATEGY による選択口（ADR 0007）
 │   │   ├── coverage.py
+│   │   ├── random.py               # 下限ベースライン（対照群・ADR 0007）
 │   │   ├── similarity.py
 │   │   └── drsa.py
 │   ├── features/                   # ★公開 API

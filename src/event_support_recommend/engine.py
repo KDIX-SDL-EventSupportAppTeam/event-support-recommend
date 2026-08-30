@@ -32,7 +32,7 @@ from .models import (
 )
 from .phases import decide_phase, evaluate_quality_gate
 from .settings import Settings
-from .strategies.coverage import CoverageStrategy
+from .strategies import resolve_strategy
 
 _EXPLORATION_MAP = {"low": 1, "mid": 2, "high": 3, "1": 1, "2": 2, "3": 3}
 
@@ -172,9 +172,11 @@ def run_recommendation(
     )
     judged_phase = decide_phase(decision_table_size, settings, gate=gate)
 
-    # --- 実際に使う戦略（退避）。SIMILARITY / DRSA は未結線なので必ず COVERAGE へ落ちる
-    #     (docs/specs/08-architecture.md §6 段3-4, docs/specs/04-strategies.md §5)。---
-    strategy = CoverageStrategy()
+    # --- 実際に使う戦略（退避）。STRATEGY で選ぶ (ADR 0007)。
+    #     SIMILARITY / DRSA は未結線なので phase は必ず COVERAGE へ落ちる
+    #     (docs/specs/08-architecture.md §6 段3-4, docs/specs/04-strategies.md §5)。
+    #     phase（契約の3値）と strategy（COVERAGE / RANDOM / ...）は別物として扱う。---
+    strategy, _ = resolve_strategy(settings.strategy, is_production=settings.is_production)
     actual_phase = Phase.COVERAGE
 
     try:
@@ -234,7 +236,7 @@ def run_recommendation(
         scores=scores_out,
     )
 
-    _log_recommend(req, resp, judged_phase, actual_phase, rules_built_at)
+    _log_recommend(req, resp, judged_phase, actual_phase, rules_built_at, strategy.name)
     return resp
 
 
@@ -244,6 +246,7 @@ def _log_recommend(
     judged_phase: Phase,
     actual_phase: Phase,
     rules_built_at: datetime | None,
+    strategy_name: str,
 ) -> None:
     jsonl.emit(
         "recommend",
@@ -252,6 +255,8 @@ def _log_recommend(
             "engine_version": __version__,
             "judged_phase": judged_phase.value,
             "phase": actual_phase.value,
+            # 契約の phase（3値）とは別。STRATEGY 固定時はここで判別する (ADR 0007 §4)。
+            "strategy": strategy_name,
             "decision_table_size": resp.decision_table_size,
             "rules_built_at": rules_built_at.isoformat() if rules_built_at else None,
             "candidate_count": len(resp.scores),
