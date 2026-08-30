@@ -158,6 +158,10 @@ class RuntimeConfig:
     experiment_arm_b: str
     interest_partial: float = 0.6
     interest_mismatch: float = 0.2
+    # 本番はコミット SHA。reason.engine.version に刻んで「どのリビジョンが出した推薦か」を
+    # 行だけで判別できるようにする (docs/specs/01-io-contract.md §3.3 (1),
+    # docs/specs/11-deployment.md §3・X-6, docs/specs/09-research-design.md R-2)。
+    engine_version: str = ""
 
 
 @dataclass(frozen=True)

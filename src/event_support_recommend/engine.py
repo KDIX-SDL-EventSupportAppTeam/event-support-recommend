@@ -53,6 +53,7 @@ def _runtime_config(s: Settings) -> RuntimeConfig:
         experiment_split_enabled=s.experiment_split_enabled,
         experiment_arm_a=s.experiment_arm_a,
         experiment_arm_b=s.experiment_arm_b,
+        engine_version=s.resolved_engine_version,
     )
 
 
@@ -190,7 +191,8 @@ def run_recommendation(
                 interest_match=InterestMatch.UNKNOWN,
                 attributes={"v": 1, "strategy": "COVERAGE", "enabled": list(cfg.enabled_attributes),
                            "condition": {}, "raw": {"visitor_count": c.visitor_count}},
-                reason={"v": 1, "strategy": "COVERAGE", "rules": [], "engine": {"version": __version__}},
+                reason={"v": 1, "strategy": "COVERAGE", "rules": [],
+                        "engine": {"version": cfg.engine_version or __version__}},
             )
             for c in ctx.request.candidates
         ]
@@ -236,7 +238,10 @@ def run_recommendation(
         scores=scores_out,
     )
 
-    _log_recommend(req, resp, judged_phase, actual_phase, rules_built_at, strategy.name)
+    _log_recommend(
+        req, resp, judged_phase, actual_phase, rules_built_at, strategy.name,
+        cfg.engine_version or __version__,
+    )
     return resp
 
 
@@ -247,12 +252,15 @@ def _log_recommend(
     actual_phase: Phase,
     rules_built_at: datetime | None,
     strategy_name: str,
+    engine_version: str,
 ) -> None:
     jsonl.emit(
         "recommend",
         {
             "user_id": req.user_id,
-            "engine_version": __version__,
+            # 本番はコミット SHA。当日の設定変更の前後を分ける唯一の手がかり
+            # (docs/specs/09-research-design.md R-2, 11-deployment.md X-6)。
+            "engine_version": engine_version,
             "judged_phase": judged_phase.value,
             "phase": actual_phase.value,
             # 契約の phase（3値）とは別。STRATEGY 固定時はここで判別する (ADR 0007 §4)。

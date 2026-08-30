@@ -74,6 +74,7 @@
 | [09 RD-3](specs/09-research-design.md) | 去年ブースへのカテゴリ付与を行うか |
 | [parameter-tuning P-1](specs/parameter-tuning/README.md) | **`/demo` の観測ログ汚染をどう断つか（`recommend_demo` に分ける／抑止する）** |
 | [parameter-tuning P-2](specs/parameter-tuning/README.md) | `/demo` を推薦側に残すか `event-support-analytics` へ移すか |
+| [ADR 0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | **`RANDOM` に P-6 を課すか、対照群としての乱択性を採るか。** ADR は両方を要求しているが両立しない（P-6 を守るとクラス内が同点になり、順位が `visitor_count` 昇順で決まって COVERAGE と同じ反人気バイアスが残る）。現状は ADR の明文どおり P-6 を優先。事前検証で下限として使う前に決める |
 | [02-features F-1](specs/02-features.md) | `exploration_disposition` を有効化するか |
 | [02-features F-2](specs/02-features.md) | `top_interest_category` の設問が採用されるか |
 | [02-features F-3](specs/02-features.md) | `booth_tags` を使うか |

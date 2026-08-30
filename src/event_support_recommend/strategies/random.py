@@ -11,7 +11,16 @@
   - P-4 乱数シードは seed_for(user_id, unlock_context)。参加者ごとにばらける
   - P-5 MISMATCH / UNKNOWN の score を 0 にしない
 
-visitor_count を一切見ない。そこが COVERAGE との違いであり、下限である理由。
+**この実装が乱択するのは interest_match の4クラスの序列だけである。**
+ADR 0007 §2 が P-6（同じ interest_match 内は visitor_count 昇順に厳密に並ぶ）の通過を
+課しているため、クラス内は同点にするほかない。結果として最終順位は
+クラス序列 → visitor_count 昇順で決まり、**COVERAGE と同じ反人気バイアスが残る。**
+
+つまり本実装は「visitor_count を無視する完全なランダム」ではない。
+ADR 0007 §2 が期待する「COVERAGE がランダムより本当に良いのかを示す下限」としては
+弱く、P-6 の要求と正面から衝突する。**どちらを優先するかは未決定**であり、
+勝手に決めない（docs/README.md 未決定事項の一覧・AGENTS.md 禁止6）。
+現状は ADR の明文（P-6 を必ず通す）に従っている。
 """
 
 from __future__ import annotations
@@ -78,7 +87,7 @@ class RandomStrategy:
                 "rules": [],
                 "tie_break": "visitor_count_asc",
                 "note": "baseline control: ignores visitor_count",
-                "engine": {"version": __version__, "rules_built_at": None},
+                "engine": {"version": cfg.engine_version or __version__, "rules_built_at": None},
             }
             out.append(
                 ScoredBooth(

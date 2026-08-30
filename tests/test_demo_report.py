@@ -7,9 +7,7 @@
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
 
-from event_support_recommend.api.app import app
 from event_support_recommend.demo import (
     build_playground_html,
     build_report_html,
@@ -89,8 +87,7 @@ def test_html_builds(html_fn):
     assert html.lstrip().lower().startswith("<!doctype html>")
 
 
-def test_demo_endpoints():
-    client = TestClient(app)
+def test_demo_endpoints(client):
     assert client.get("/demo").status_code == 200
     r = client.post("/demo/run", json={"overrides": {"w_interest": 0.9, "w_coverage": 0.1}})
     assert r.status_code == 200

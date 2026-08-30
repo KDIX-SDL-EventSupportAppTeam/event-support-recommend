@@ -8,7 +8,6 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from .. import __version__
 from ..cache import RuleCache
 from ..engine import run_recommendation
 from ..phases import decide_phase, evaluate_quality_gate
@@ -43,9 +42,13 @@ def _require_ops(request: Request) -> None:
 
 
 @public_router.get("/health")
-async def health() -> dict:
-    """生存確認。依存なしで即答する。"""
-    return {"status": "ok", "engine_version": __version__}
+async def health(request: Request) -> dict:
+    """生存確認。依存なしで即答する。
+
+    `engine_version` は本番ではコミット SHA（`ENGINE_VERSION`）。デプロイ後の V-1 は
+    ここでリビジョンを確認する (docs/specs/11-deployment.md §7 V-1・X-6)。
+    """
+    return {"status": "ok", "engine_version": _settings(request).resolved_engine_version}
 
 
 @public_router.get("/ready")

@@ -61,7 +61,11 @@ URL を知る誰でもパラメータを試せる状態にしない（[11-deploy
 ```bash
 docker build -t event-support-recommend:local .
 docker run --rm -p 8080:8080 -e APP_ENV=production -e OPS_TOKEN=secret event-support-recommend:local
-gcloud builds submit --config cloudbuild.yaml    # Cloud Build → Artifact Registry → Cloud Run
+# Cloud Build → Artifact Registry → Cloud Run
+# 手動実行では $COMMIT_SHA が空になるため必ず明示する（空だとタグが壊れてビルドが失敗し、
+# 通ってしまった場合は「どのコードが出した推薦か」が復元できなくなる・X-6）
+gcloud builds submit --config cloudbuild.yaml \
+  --substitutions=COMMIT_SHA="$(git rev-parse --short HEAD)"
 ```
 
 - **Cloud Run のプローブに `/ready` を使わない。** 段3 未結線のあいだ `/ready` は常に 503 が正常であり、

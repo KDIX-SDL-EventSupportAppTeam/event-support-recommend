@@ -74,6 +74,62 @@ def test_startup_log_reports_protection_state(capsys):
     assert rec["strategy"] == "auto"
 
 
+# --- ENGINE_VERSION がコミット SHA として全経路に載る (V-1, X-6, R-2) -----------
+_SHA = "9f3c1ab0deadbeef"
+
+
+def test_v1_health_reports_engine_version():
+    r = _client(engine_version=_SHA).get("/health")
+    assert r.status_code == 200
+    assert r.json()["engine_version"] == _SHA
+
+
+def test_ops_state_reports_same_engine_version():
+    c = _client(engine_version=_SHA, ops_token="t")
+    body = c.get("/ops/state", headers={"x-ops-token": "t"}).json()
+    assert body["engine_version"] == _SHA
+
+
+def test_engine_version_is_stamped_on_every_score_row():
+    """研究データの突合はこれが頼り (docs/specs/01-io-contract.md §3.3 (1))。"""
+    c = _client(engine_version=_SHA)
+    body = c.post(
+        "/recommend/cells",
+        json={
+            "user_id": "u1",
+            "cell_count": 4,
+            "candidate_booths": [
+                {"booth_id": "b1", "category_id": "cat_a", "visitor_count": 3},
+                {"booth_id": "b2", "category_id": "cat_b", "visitor_count": 9},
+            ],
+        },
+    ).json()
+    assert body["scores"]
+    for s in body["scores"]:
+        assert s["reason"]["engine"]["version"] == _SHA
+
+
+def test_recommend_log_carries_engine_version(capsys):
+    c = _client(engine_version=_SHA)
+    c.post(
+        "/recommend/cells",
+        json={
+            "user_id": "u1",
+            "cell_count": 4,
+            "candidate_booths": [{"booth_id": "b1", "category_id": "cat_a", "visitor_count": 3}],
+        },
+    )
+    line = [l for l in capsys.readouterr().out.splitlines() if '"kind":"recommend"' in l][-1]
+    assert json.loads(line)["engine_version"] == _SHA
+
+
+def test_engine_version_unset_falls_back_to_package_version():
+    """X-6 は運用で防ぐ。未設定でも壊れず、パッケージ版が出る。"""
+    from event_support_recommend import __version__
+
+    assert _client(engine_version="").get("/health").json()["engine_version"] == __version__
+
+
 def test_startup_log_flags_unprotected_ops(capsys):
     with _client(app_env="production", ops_token=""):
         pass

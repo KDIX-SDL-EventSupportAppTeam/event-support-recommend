@@ -53,6 +53,11 @@ steps:
       # ENGINE_VERSION にコミット SHA を入れる（研究データの突合に要る・X-6）。
       # しきい値（PHASE_*/W_*/DRSA_*）は Cloud Run 側で渡さない。イメージ内の既定に任せる
       # （当日 PHASE_DRSA_MIN を上書きしたことが一目で分かる状態を保つ・X-5）。
+      #
+      # 注意: --update-env-vars は既存の env を消さない。当日キルスイッチとして
+      # コンソールから PHASE_DRSA_MIN を上書きした場合、その値は次回以降のデプロイでも
+      # 残り続ける。**イベント終了後に手で消すこと。** 消し忘れると
+      # 「上書きした状態が既定」になり X-5 が破れる。
       - --update-env-vars=^@^APP_ENV=production@ENGINE_VERSION=$COMMIT_SHA@STRATEGY=auto@LOG_LEVEL=info
       # Secret 名はサーバーの Secret と衝突しないよう RECOMMEND_ を前置する (§3)。
       - --set-secrets=OPS_TOKEN=RECOMMEND_OPS_TOKEN:latest

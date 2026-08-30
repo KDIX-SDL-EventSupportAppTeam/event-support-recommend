@@ -101,15 +101,62 @@ def test_p1_score_visitor_correlation_is_not_systematically_positive(run_random)
     for i in range(60):
         resp = run_random(_req(f"user_{i}"))
         rhos.append(_spearman([s.score for s in resp.scores], [_vc(s) for s in resp.scores]))
-    mean = statistics.mean(rhos)
-    # 下限ベースラインは visitor_count を見ない。系統的な正の相関が無いこと (P-1)。
-    assert mean <= 0.1, mean
-    assert not all(r > 0 for r in rhos)
+    # P-1: 系統的な正の相関が無いこと。個々の参加者では正になりうる（クラス序列が
+    # たまたま人気順と揃う場合）ので、平均で見る。
+    assert statistics.mean(rhos) <= 0.1, statistics.mean(rhos)
 
 
 def test_p4_different_participants_get_different_recommendations(run_random):
+    """属性が違えば結果が違う (P-4)。候補の interest_match が複数クラスに分かれる場合。"""
     seen = {tuple(x.booth_id for x in run_random(_req(f"u{i}")).assigned) for i in range(8)}
     assert len(seen) > 1  # 全員同じにはならない
+
+
+def test_single_interest_class_input_is_participant_invariant_like_coverage():
+    """**既知の限界。** 候補の interest_match が1クラスしか無い入力では、
+    クラス内が同点になり順序が visitor_count 昇順だけで決まるため、
+    全参加者に同じ推薦が返る。
+
+    これは RANDOM 固有の欠陥ではなく **COVERAGE も全く同じ**であり
+    （`pre_survey=null` は 07-testing §3 で「開場直後の常態」、
+    demo シナリオ ② は rank が visitor_count 昇順に完全一致することを期待値としている）、
+    P-4 の「属性が違えば結果が違う」は満たしている（この入力では属性が違わない）。
+
+    ただし ADR 0007 §2 が RANDOM に期待する「下限ベースライン」としては弱い。
+    P-6 と両立しないこの点は未決定事項として docs/README.md に記録した。
+    ここでは**現在の挙動を可視化して固定する**（黙って劣化させないため）。
+    """
+    tied = {
+        "user_id": "PLACEHOLDER",
+        "cell_count": 4,
+        "candidate_booths": [
+            {"booth_id": f"b{i}", "category_id": "cat_x", "visitor_count": v}
+            for i, v in enumerate([2, 6, 11, 18, 27, 39, 52, 70, 95, 130])
+        ],
+        "pre_survey": None,
+    }
+
+    def assigned_for(strategy: str) -> set[tuple[str, ...]]:
+        s = Settings(
+            _env_file=None,
+            enabled_attributes=["preference_match", "rating_affinity"],
+            strategy=strategy,
+            ops_token="",
+        )
+        return {
+            tuple(
+                a.booth_id
+                for a in run_recommendation(
+                    RecommendRequest.model_validate({**tied, "user_id": f"u{i}"}),
+                    settings=s,
+                    rule_cache=RuleCache(),
+                ).assigned
+            )
+            for i in range(20)
+        }
+
+    assert len(assigned_for("random")) == 1
+    assert assigned_for("random") == assigned_for("coverage")  # COVERAGE と同じ挙動
 
 
 def test_p5_mismatch_score_is_not_zero(run_random):

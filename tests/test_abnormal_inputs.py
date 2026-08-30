@@ -6,16 +6,8 @@
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
 
-from event_support_recommend.api.app import app
-
-
-@pytest.fixture
-def client():
-    with TestClient(app) as c:
-        yield c
-
+# client フィクスチャは conftest.py（明示 Settings。開発者の .env に依存しない）
 
 CANDS = [
     {"booth_id": "b1", "category_id": "cat_a", "visitor_count": 3},
