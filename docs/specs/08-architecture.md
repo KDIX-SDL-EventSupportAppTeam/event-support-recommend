@@ -177,10 +177,19 @@ RESPONSE_BUDGET_MS=600            # サーバー側タイムアウト 1000ms に
 ### 運用
 
 ```
+APP_ENV=development               # production で /demo を無効化し、OPS_TOKEN 未設定時は /ops/* も無効化する
 LOG_RAW_REQUEST=false             # 当日の契約ズレ調査用
 LOG_LEVEL=info
-OPS_TOKEN=                        # /ops/* の保護
-ENGINE_VERSION=                   # 未設定ならパッケージ版を使う
+OPS_TOKEN=                        # /ops/* の保護。production では必須（11-deployment.md D-4）
+ENGINE_VERSION=                   # 未設定ならパッケージ版を使う。本番はコミット SHA を入れる
+```
+
+### 戦略の選択（[ADR 0007](../decisions/adrs/0007-戦略の選択を環境変数で行う.md)）
+
+```
+STRATEGY=auto                     # auto | coverage | random
+                                  # auto = フェーズ判定に従う（現状は必ず COVERAGE）
+                                  # random は下限ベースライン。APP_ENV=production では auto に落とす
 ```
 
 ### データ取得（[ADR 0002](../decisions/adrs/0002-決定表のデータ入手経路.md) 決定後に確定）
@@ -195,6 +204,8 @@ ENGINE_VERSION=                   # 未設定ならパッケージ版を使う
 ---
 
 ## 5. デプロイ
+
+**詳細は [11-deployment.md](11-deployment.md)（構成・修正すべき点・確認項目）。ここでは前提だけ書く。**
 
 - **Cloud Run**（サーバー・分析と同じ）
 - **ステートレス。書き込みを一切行わない**

@@ -296,3 +296,6 @@
   （[10-observability.md](10-observability.md)）
 - **JSONL ログの回収経路**（Cloud Logging → ファイル → 分析リポジトリ）を一度通す
 - **キルスイッチ**（`PHASE_DRSA_MIN` の引き上げ）が効くこと
+- **[11-deployment.md](11-deployment.md) §7 の確認項目（V-1〜V-16）を通すこと。**
+  デプロイ直後に1回、当日リハーサルでもう1回。
+  とくに V-2（`/ready` が 503 で正常）・V-5（`/demo` が 404）・V-14（Cloud Logging の構造化）
