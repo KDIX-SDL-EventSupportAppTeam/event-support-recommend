@@ -36,6 +36,18 @@ pip install -e ".[dev]" && pytest
 uvicorn event_support_recommend.api.app:app --reload
 ```
 
+### 推薦結果を目で見て確認する
+
+合成シナリオを流し、候補ごとのスコア・`interest_match`・散布図（人気順に退化していないか）・
+自動チェック（`docs/specs/07-testing.md` の「起きてはいけないこと」）と、DRSA コアが抽出した規則を
+1枚の HTML にまとめる。
+
+```bash
+python tools/build_report.py        # tools/out/index.html を生成してブラウザで開く
+```
+
+サーバー起動中なら同じ内容を `GET /demo` でも見られる。
+
 ## API
 
 実装するのは1本だけ（＋運用用のいくつか）。

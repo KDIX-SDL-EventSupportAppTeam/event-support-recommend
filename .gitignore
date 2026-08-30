@@ -16,3 +16,6 @@ venv/
 .ruff_cache/
 dist/
 build/
+
+# デモレポートの出力先
+tools/out/

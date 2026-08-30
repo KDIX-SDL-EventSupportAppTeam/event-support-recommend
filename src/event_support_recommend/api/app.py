@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 
 from .. import __version__, logging as jsonl
 from ..cache import RuleCache
@@ -36,3 +37,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="event-support-recommend", version=__version__, lifespan=lifespan)
 app.include_router(recommend_router)
 app.include_router(ops_router)
+
+
+@app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
+async def demo() -> str:
+    """目視確認レポート（合成シナリオ）。tools/build_report.py と同じ内容を動的生成する。"""
+    from ..demo import build_report_html
+
+    return build_report_html()
