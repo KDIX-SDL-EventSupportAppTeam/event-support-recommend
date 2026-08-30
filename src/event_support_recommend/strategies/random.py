@@ -86,7 +86,10 @@ class RandomStrategy:
                 "strategy": self.name,
                 "rules": [],
                 "tie_break": "visitor_count_asc",
-                "note": "baseline control: ignores visitor_count",
+                # 分析側がこの行だけを見て何をした戦略か判別できるようにする
+                # (docs/specs/01-io-contract.md §3.3 (1))。docstring と主張を一致させること。
+                "note": "baseline: randomizes interest_match class order only; "
+                        "ties broken by visitor_count_asc (P-6)",
                 "engine": {"version": cfg.engine_version or __version__, "rules_built_at": None},
             }
             out.append(
