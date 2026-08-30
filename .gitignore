@@ -1,0 +1,17 @@
+# 個人データ・秘匿情報はコミットしない（docs/rules/data-handling.md, docs/rules/git.md）
+.env
+.env.*
+!.env.example
+data/
+*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
