@@ -20,14 +20,21 @@
 
 ## 現在の状態
 
-**仕様の整備中。コードはまだ1行も書いていない。**
+**段1（`COVERAGE` ＋ `features/`）と段2（`drsa/` コア）を実装済み**
+（[ADR 0005](docs/decisions/adrs/0005-段1と段2のみ実装する.md)）。
 
 | 項目 | 状態 |
 |---|---|
 | 仕様書 | 一通り揃った（[docs/README.md](docs/README.md)） |
-| 実装 | 未着手 |
+| 実装 段1・段2 | **済**。`POST /recommend/cells` は `COVERAGE` を返す。`drsa/` は純粋・テスト済み |
+| 実装 段3・段4（`data/`・規則キャッシュ・`SIMILARITY` / `DRSA` 結線） | **未着手**（[ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md) の決着待ち） |
 | データ入手経路（[ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md)） | **未決定。`SIMILARITY` / `DRSA` はこれが決まるまで実装しない** |
 | 事前アンケートの設問要求（[06](docs/specs/06-pre-survey-requirements.md)） | サーバー側の承認待ち。**締切はアンケート配布日** |
+
+```bash
+pip install -e ".[dev]" && pytest
+uvicorn event_support_recommend.api.app:app --reload
+```
 
 ## API
 
