@@ -30,6 +30,8 @@
 | 08 | [architecture](specs/08-architecture.md) | モジュール境界・ディレクトリ・設定値・実装順序 |
 | 09 | [research-design](specs/09-research-design.md) | **実験設計。** 何と何を比べて何を主張するか |
 | 10 | [observability](specs/10-observability.md) | 推薦エンジンが外へ出す観測データ。当日の対応行動 |
+| 11 | [deployment](specs/11-deployment.md) | **Cloud Run へのデプロイ。** 構成・修正すべき点・デプロイ後の確認項目 |
+| — | [parameter-tuning](specs/parameter-tuning/README.md) | パラメータ調整・監視の置き場所（analytics への集約）。**草案・未決定** |
 
 **ダッシュボードの実装仕様は `event-support-analytics` にある**
 （`docs/specs/recommendation-evaluation/`）。本リポジトリは観測データの提供までを担う。
@@ -43,6 +45,8 @@
 | [0003](decisions/adrs/0003-条件属性の構成.md) | 条件属性の構成（2個＋予備1個） | 採用（暫定） |
 | [0004](decisions/adrs/0004-fastapiを採用する.md) | FastAPI を採用する | 採用 |
 | [0005](decisions/adrs/0005-段1と段2のみ実装する.md) | 実装は段1・段2に限る（ADR 0002 未決のため） | 採用 |
+| [0006](decisions/adrs/0006-推薦サービスを未認証で公開する.md) | 推薦サービスを未認証で公開する | 採用 |
+| [0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | 戦略の選択を環境変数（`STRATEGY`）で行う | 採用 |
 
 ## 現在の状態
 
@@ -53,6 +57,7 @@
 |---|---|
 | 仕様書 | 一通り揃った（本ページの 01〜10） |
 | 実装 段1・段2 | **済**（`src/event_support_recommend/`、`tests/`） |
+| デプロイ | **未実施。** 仕様は [11-deployment.md](specs/11-deployment.md) に確定済み（実装待ち） |
 | 実装 段3・段4 | **未着手**（`data/` 結線・規則キャッシュ・`SIMILARITY` / `DRSA`） |
 | [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md)（データ入手経路） | **未決定。`SIMILARITY` / `DRSA` はこれが決まるまで実装しない** |
 | [06 の設問要求](specs/06-pre-survey-requirements.md) | サーバー側の承認待ち。**締切はアンケート配布日** |
@@ -67,6 +72,8 @@
 | [09 RD-1](specs/09-research-design.md) | **参加者内ランダム化を実施するか（実装着手前に決める）** |
 | [09 RD-2](specs/09-research-design.md) | 品質ゲートのしきい値（規則3本・γ 0.5・被覆率 0.5） |
 | [09 RD-3](specs/09-research-design.md) | 去年ブースへのカテゴリ付与を行うか |
+| [parameter-tuning P-1](specs/parameter-tuning/README.md) | **`/demo` の観測ログ汚染をどう断つか（`recommend_demo` に分ける／抑止する）** |
+| [parameter-tuning P-2](specs/parameter-tuning/README.md) | `/demo` を推薦側に残すか `event-support-analytics` へ移すか |
 | [02-features F-1](specs/02-features.md) | `exploration_disposition` を有効化するか |
 | [02-features F-2](specs/02-features.md) | `top_interest_category` の設問が採用されるか |
 | [02-features F-3](specs/02-features.md) | `booth_tags` を使うか |
