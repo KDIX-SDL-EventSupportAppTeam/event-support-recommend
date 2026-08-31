@@ -32,7 +32,7 @@ from .models import (
 )
 from .phases import decide_phase, evaluate_quality_gate
 from .settings import Settings
-from .strategies.coverage import CoverageStrategy
+from .strategies import resolve_strategy
 
 _EXPLORATION_MAP = {"low": 1, "mid": 2, "high": 3, "1": 1, "2": 2, "3": 3}
 
@@ -53,6 +53,7 @@ def _runtime_config(s: Settings) -> RuntimeConfig:
         experiment_split_enabled=s.experiment_split_enabled,
         experiment_arm_a=s.experiment_arm_a,
         experiment_arm_b=s.experiment_arm_b,
+        engine_version=s.resolved_engine_version,
     )
 
 
@@ -172,9 +173,11 @@ def run_recommendation(
     )
     judged_phase = decide_phase(decision_table_size, settings, gate=gate)
 
-    # --- 実際に使う戦略（退避）。SIMILARITY / DRSA は未結線なので必ず COVERAGE へ落ちる
-    #     (docs/specs/08-architecture.md §6 段3-4, docs/specs/04-strategies.md §5)。---
-    strategy = CoverageStrategy()
+    # --- 実際に使う戦略（退避）。STRATEGY で選ぶ (ADR 0007)。
+    #     SIMILARITY / DRSA は未結線なので phase は必ず COVERAGE へ落ちる
+    #     (docs/specs/08-architecture.md §6 段3-4, docs/specs/04-strategies.md §5)。
+    #     phase（契約の3値）と strategy（COVERAGE / RANDOM / ...）は別物として扱う。---
+    strategy, _ = resolve_strategy(settings.strategy, is_production=settings.is_production)
     actual_phase = Phase.COVERAGE
 
     try:
@@ -188,7 +191,8 @@ def run_recommendation(
                 interest_match=InterestMatch.UNKNOWN,
                 attributes={"v": 1, "strategy": "COVERAGE", "enabled": list(cfg.enabled_attributes),
                            "condition": {}, "raw": {"visitor_count": c.visitor_count}},
-                reason={"v": 1, "strategy": "COVERAGE", "rules": [], "engine": {"version": __version__}},
+                reason={"v": 1, "strategy": "COVERAGE", "rules": [],
+                        "engine": {"version": cfg.engine_version or __version__}},
             )
             for c in ctx.request.candidates
         ]
@@ -234,7 +238,10 @@ def run_recommendation(
         scores=scores_out,
     )
 
-    _log_recommend(req, resp, judged_phase, actual_phase, rules_built_at)
+    _log_recommend(
+        req, resp, judged_phase, actual_phase, rules_built_at, strategy.name,
+        cfg.engine_version or __version__,
+    )
     return resp
 
 
@@ -244,14 +251,20 @@ def _log_recommend(
     judged_phase: Phase,
     actual_phase: Phase,
     rules_built_at: datetime | None,
+    strategy_name: str,
+    engine_version: str,
 ) -> None:
     jsonl.emit(
         "recommend",
         {
             "user_id": req.user_id,
-            "engine_version": __version__,
+            # 本番はコミット SHA。当日の設定変更の前後を分ける唯一の手がかり
+            # (docs/specs/09-research-design.md R-2, 11-deployment.md X-6)。
+            "engine_version": engine_version,
             "judged_phase": judged_phase.value,
             "phase": actual_phase.value,
+            # 契約の phase（3値）とは別。STRATEGY 固定時はここで判別する (ADR 0007 §4)。
+            "strategy": strategy_name,
             "decision_table_size": resp.decision_table_size,
             "rules_built_at": rules_built_at.isoformat() if rules_built_at else None,
             "candidate_count": len(resp.scores),

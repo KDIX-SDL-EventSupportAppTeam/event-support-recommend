@@ -6,6 +6,9 @@ import pytest
 
 os.environ.setdefault("OPS_TOKEN", "")
 
+from fastapi.testclient import TestClient  # noqa: E402
+
+from event_support_recommend.api.app import create_app  # noqa: E402
 from event_support_recommend.api.schemas import RecommendRequest  # noqa: E402
 from event_support_recommend.cache import RuleCache  # noqa: E402
 from event_support_recommend.engine import run_recommendation  # noqa: E402
@@ -19,6 +22,18 @@ def settings() -> Settings:
         enabled_attributes=["preference_match", "rating_affinity"],
         ops_token="",
     )
+
+
+@pytest.fixture
+def client(settings: Settings):
+    """テスト用アプリ。
+
+    モジュール直下の `api.app.app` を使わない。あれは import 時に `.env` を読むため、
+    開発者の手元に `APP_ENV=production` や `STRATEGY=random` があるとテストの前提が
+    変わってしまう（docs/specs/11-deployment.md D-3・ADR 0007）。
+    """
+    with TestClient(create_app(settings)) as c:
+        yield c
 
 
 def make_request(**over) -> RecommendRequest:

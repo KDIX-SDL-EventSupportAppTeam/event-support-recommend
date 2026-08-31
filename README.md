@@ -51,6 +51,30 @@ uvicorn event_support_recommend.api.app:app --port 8077   # 起動して…
   動かすと、本物の Python エンジンで再計算する対話ページ
 - `POST /demo/run` … `{"overrides": {...}}` を投げると再計算結果を JSON で返す（キーは既知・範囲内に丸め）
 
+**`/demo` は `APP_ENV=production` では登録されない（404）。** 本番のサービスは未認証公開なので、
+URL を知る誰でもパラメータを試せる状態にしない（[11-deployment.md](docs/specs/11-deployment.md) D-3）。
+
+### デプロイ（Cloud Run）
+
+構成・修正点・確認項目は [docs/specs/11-deployment.md](docs/specs/11-deployment.md) が正本。
+
+```bash
+docker build -t event-support-recommend:local .
+docker run --rm -p 8080:8080 -e APP_ENV=production -e OPS_TOKEN=secret event-support-recommend:local
+# Cloud Build → Artifact Registry → Cloud Run
+# 手動実行では $COMMIT_SHA が空になるため必ず明示する（空だとタグが壊れてビルドが失敗し、
+# 通ってしまった場合は「どのコードが出した推薦か」が復元できなくなる・X-6）
+gcloud builds submit --config cloudbuild.yaml \
+  --substitutions=COMMIT_SHA="$(git rev-parse --short HEAD)"
+```
+
+- **Cloud Run のプローブに `/ready` を使わない。** 段3 未結線のあいだ `/ready` は常に 503 が正常であり、
+  プローブに指定するとリビジョンが永久に起動しない（[11-deployment.md](docs/specs/11-deployment.md) X-1）。
+  プローブは依存ゼロの `/health`
+- `APP_ENV=production` かつ `OPS_TOKEN` 未設定なら `/ops/*` も登録されない（無認証で素通しにしない・D-4）
+- `STRATEGY=auto|coverage|random` で戦略を選ぶ（[ADR 0007](docs/decisions/adrs/0007-戦略の選択を環境変数で行う.md)）。
+  `random` は**対照群・下限ベースライン**で、本番では `auto` に落ちる
+
 ## API
 
 実装するのは1本だけ（＋運用用のいくつか）。

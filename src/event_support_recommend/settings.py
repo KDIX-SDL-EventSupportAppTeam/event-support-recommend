@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     log_level: str = "info"
     ops_token: str = ""
     engine_version: str = ""
+    # production で /demo を無効化し、OPS_TOKEN 未設定時は /ops/* も無効化する
+    # (docs/specs/11-deployment.md D-3, D-4)。
+    app_env: str = "development"
+    # 戦略の選択 (docs/decisions/adrs/0007-戦略の選択を環境変数で行う.md)。
+    # auto | coverage | random。解決は strategies/registry.py が行う。
+    strategy: str = "auto"
 
     @field_validator("enabled_attributes", mode="before")
     @classmethod
@@ -83,6 +89,10 @@ class Settings(BaseSettings):
     @property
     def resolved_engine_version(self) -> str:
         return self.engine_version or __version__
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.strip().lower() == "production"
 
     @property
     def default_phase_drsa_min(self) -> int:

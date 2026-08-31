@@ -93,7 +93,7 @@ class CoverageStrategy:
                     "w_coverage": cfg.w_coverage,
                     "w_interest": cfg.w_interest,
                 },
-                "engine": {"version": __version__, "rules_built_at": None},
+                "engine": {"version": cfg.engine_version or __version__, "rules_built_at": None},
             }
             out.append(
                 ScoredBooth(

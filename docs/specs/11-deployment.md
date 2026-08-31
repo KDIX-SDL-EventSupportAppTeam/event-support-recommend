@@ -1,11 +1,22 @@
 ---
-状態: 確定（実装前）
+状態: 確定（§9 の 1〜5 まで実装済・デプロイ未実施）
 最終更新: 2026-08-31
 ---
 
 # デプロイ — Cloud Run
 
 **本ファイルは実装指示である。** これを読んで実装すれば本番に出せる状態になることを目標にする。
+
+## 実装状況
+
+| §9 の手順 | 状態 |
+|---|---|
+| 1. `.dockerignore`（D-1）＋ ローカル `docker build` / `docker run`（D-5） | **済**（`APP_ENV=production` で起動し `/health` 200・`/ready` 503・`/demo` 404・`/ops/state` 401 を確認） |
+| 2. `APP_ENV` と `/demo`・`/ops/*` の条件付き登録（D-3・D-4） | **済**（`api/app.py` の `create_app()`・`tests/test_deployment.py`） |
+| 3. `STRATEGY` レジストリ（ADR 0007） | **済**（`strategies/registry.py`・`strategies/random.py`） |
+| 4. `cloudbuild.yaml`（§1・§3） | **済** |
+| 5. `.env.example` と [08-architecture.md](08-architecture.md) §4 | **済** |
+| 6. デプロイ → §7 の確認 → [07-testing.md](07-testing.md) §12 へ反映 | **未実施**（V-1〜V-16 はデプロイ後に人が行う） |
 
 ## 0. 前提の確認（ここを誤解しない）
 

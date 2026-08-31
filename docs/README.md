@@ -57,7 +57,7 @@
 |---|---|
 | 仕様書 | 一通り揃った（本ページの 01〜10） |
 | 実装 段1・段2 | **済**（`src/event_support_recommend/`、`tests/`） |
-| デプロイ | **未実施。** 仕様は [11-deployment.md](specs/11-deployment.md) に確定済み（実装待ち） |
+| デプロイ | **実装済・未実施。** [11-deployment.md](specs/11-deployment.md) の D-1〜D-5 と `cloudbuild.yaml` は揃った。残るのは実際のデプロイと §7 の確認（V-1〜V-16） |
 | 実装 段3・段4 | **未着手**（`data/` 結線・規則キャッシュ・`SIMILARITY` / `DRSA`） |
 | [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md)（データ入手経路） | **未決定。`SIMILARITY` / `DRSA` はこれが決まるまで実装しない** |
 | [06 の設問要求](specs/06-pre-survey-requirements.md) | サーバー側の承認待ち。**締切はアンケート配布日** |
@@ -74,6 +74,7 @@
 | [09 RD-3](specs/09-research-design.md) | 去年ブースへのカテゴリ付与を行うか |
 | [parameter-tuning P-1](specs/parameter-tuning/README.md) | **`/demo` の観測ログ汚染をどう断つか（`recommend_demo` に分ける／抑止する）** |
 | [parameter-tuning P-2](specs/parameter-tuning/README.md) | `/demo` を推薦側に残すか `event-support-analytics` へ移すか |
+| [ADR 0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | **`RANDOM` に P-6 を課すか、対照群としての乱択性を採るか。** ADR は両方を要求しているが両立しない（P-6 を守るとクラス内が同点になり、順位が `visitor_count` 昇順で決まって COVERAGE と同じ反人気バイアスが残る）。現状は ADR の明文どおり P-6 を優先。事前検証で下限として使う前に決める |
 | [02-features F-1](specs/02-features.md) | `exploration_disposition` を有効化するか |
 | [02-features F-2](specs/02-features.md) | `top_interest_category` の設問が採用されるか |
 | [02-features F-3](specs/02-features.md) | `booth_tags` を使うか |

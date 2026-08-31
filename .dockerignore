@@ -1,0 +1,44 @@
+# Docker ビルドコンテキストから除外する (docs/specs/11-deployment.md D-1)。
+# 秘密（.env）をビルドの経路に乗せない・コンテキストを軽くする。
+# event-support-server/.dockerignore を下敷きに Python 向けへ置き換えたもの。
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Python 仮想環境・キャッシュ・ビルド成果物
+.venv
+venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+__pycache__
+*.pyc
+*.pyo
+build
+dist
+*.egg-info
+
+# Env / secrets（.env.example は残す）
+.env
+.env.*
+!.env.example
+
+# 本番イメージに不要
+tests
+docs
+tools
+data
+
+# IDE / OS
+.claude
+.vscode
+.idea
+.cursor
+.DS_Store
+Thumbs.db
+
+# ドキュメント（README.md は Dockerfile が COPY するので残す）
+*.md
+!README.md
