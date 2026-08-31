@@ -49,6 +49,8 @@ def _runtime_config(s: Settings) -> RuntimeConfig:
         rating_scale_default=s.rating_scale_default,
         drsa_coverage_floor=s.drsa_coverage_floor,
         similarity_coverage_floor=s.similarity_coverage_floor,
+        similarity_neighbors=s.similarity_neighbors,
+        similarity_shrinkage=s.similarity_shrinkage,
         max_per_category=s.max_per_category,
         experiment_split_enabled=s.experiment_split_enabled,
         experiment_arm_a=s.experiment_arm_a,

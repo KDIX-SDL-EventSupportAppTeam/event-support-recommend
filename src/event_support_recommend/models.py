@@ -165,6 +165,8 @@ class RuntimeConfig:
     experiment_arm_b: str
     interest_partial: float = 0.6
     interest_mismatch: float = 0.2
+    similarity_neighbors: int = 20
+    similarity_shrinkage: float = 5.0
     # 本番はコミット SHA。reason.engine.version に刻んで「どのリビジョンが出した推薦か」を
     # 行だけで判別できるようにする (docs/specs/01-io-contract.md §3.3 (1),
     # docs/specs/11-deployment.md §3・X-6, docs/specs/09-research-design.md R-2)。
@@ -177,6 +179,10 @@ class RecommendationContext:
     participant: Participant
     snapshot: EventSnapshot
     config: RuntimeConfig
+    # SIMILARITY が近傍計算に使う生データ（cache.SnapshotData）。無ければ SIMILARITY は
+    # 実行できず COVERAGE へ退避する (docs/specs/04-strategies.md §5)。循環 import を避け
+    # 型注釈は文字列参照のまま（typing.TYPE_CHECKING でだけ解決）。
+    snapshot_data: "object | None" = None
 
 
 @dataclass

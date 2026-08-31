@@ -16,6 +16,11 @@ from typing import Protocol, runtime_checkable
 from ..models import RecommendationContext, ScoredBooth
 
 
+class StrategyUnavailable(Exception):
+    """戦略が実行条件を満たせず、退避ラダーを1段下るべきことを表す
+    (docs/specs/04-strategies.md §5)。理由を `str(exc)` に持たせる。"""
+
+
 @runtime_checkable
 class Strategy(Protocol):
     name: str
