@@ -78,6 +78,19 @@ def compute_candidate_features(ctx: RecommendationContext) -> dict[str, Candidat
     return out
 
 
+def vector_from_features(f: CandidateFeatures, enabled) -> dict[str, int]:
+    """有効な条件属性だけの順序ベクトル（DRSA 規則の適合判定・被覆率算出に使う）。"""
+    out: dict[str, int] = {}
+    for name in enabled:
+        if name == "preference_match":
+            out[name] = f.preference_match
+        elif name == "rating_affinity":
+            out[name] = f.rating_affinity
+        elif name == "exploration_disposition" and f.exploration_disposition is not None:
+            out[name] = f.exploration_disposition
+    return out
+
+
 def _declared_signal(cand: CandidateBooth, survey) -> int:
     if not survey.answered or cand.category_id is None:
         return 0
