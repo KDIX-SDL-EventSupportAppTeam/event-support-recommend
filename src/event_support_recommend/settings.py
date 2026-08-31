@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     drsa_consistency: float = 0.8
     min_support: int = 5
 
+    # --- スナップショット取得（段3 / ADR 0002）---
+    # READONLY_PROXY_URL が空なら取得を試みず COVERAGE 固定で動く
+    # (docs/specs/runtime-phase-switching/01-snapshot-source.md)。
+    readonly_proxy_url: str = ""
+    readonly_proxy_key: str = ""  # 読み取り専用の鍵。書き込み可能な鍵を入れてはならない
+    readonly_proxy_timeout_sec: float = 20.0
+    snapshot_event_id: str = ""  # 空なら直近リクエストの event_id を使う
+
     # --- 性能・キャッシュ ---
     snapshot_ttl_sec: int = 300
     rule_cache_ttl_sec: int = 300
