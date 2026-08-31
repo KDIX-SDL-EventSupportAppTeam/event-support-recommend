@@ -13,16 +13,17 @@ R-4（再生成中も前回規則で応答）は段3が未結線で退避先も�
 
 from __future__ import annotations
 
+import sys
 import time
 
 import pytest
 
-import event_support_recommend.drsa as drsa_pkg
-import event_support_recommend.drsa.rules as drsa_rules
 from event_support_recommend.api.schemas import RecommendRequest
 from event_support_recommend.cache import RuleCache
 from event_support_recommend.data import repository as repo_mod
 from event_support_recommend.drsa.rules import CONCLUSION_DOWN, CONCLUSION_UP, Condition, Rule, RuleSet
+
+_PKG = "event_support_recommend"
 
 
 def _req(n_candidates: int = 100, uid: str = "perf-user") -> RecommendRequest:
@@ -83,52 +84,81 @@ def _cache_with_rules(n_rules: int = 100) -> RuleCache:
 # --------------------------------------------------------------------------
 
 
-def test_r2_request_path_does_not_generate_rules_or_fetch_snapshot(run, monkeypatch):
-    calls: list[str] = []
+class _R2Violation(BaseException):
+    """R-2 違反の通知。
 
-    def _spy_generate_rules(*a, **k):
-        calls.append("generate_rules")
-        raise AssertionError("generate_rules called on the request path (R-2 違反)")
+    `Exception` ではなく `BaseException` から派生させる。engine とルータは
+    どちらも `except Exception` で握りつぶして 200 を返す設計（500 を返さない、
+    01-io-contract O-6）なので、`Exception` 系だと**違反が握りつぶされて
+    テストが緑になる**。実際にそうなることを確認済み。
+    """
 
+
+def _install_r2_guard(monkeypatch) -> list[str]:
+    """リクエスト経路で呼ばれてはいけないものに見張りを付ける。
+
+    戻り値は違反の記録先。例外は握りつぶされうるので、**記録の空判定を本体の
+    アサーションにする**（例外は早期に気づくための補助）。
+
+    規則生成は「どのモジュールが名前を握っているか」で捕まえ方が変わる。
+    `from ..drsa import generate_rules` をモジュール先頭に書かれると、
+    その束縛は import 時に確定するため `drsa` 側だけ差し替えても捕まらない
+    （実際に素通りすることを確認済み）。そこで **すでに import 済みの自パッケージの
+    モジュールすべて**について同名属性を差し替える。
+    """
+    violations: list[str] = []
+
+    def _spy(name: str):
+        def _fn(*a, **k):
+            violations.append(name)
+            raise _R2Violation(f"{name} がリクエスト経路で呼ばれた (R-2 違反)")
+
+        return _fn
+
+    # 1) 規則生成 — 名前を握っている自パッケージのモジュールを総当たりで差し替える。
+    patched: list[str] = []
+    for mod_name, mod in list(sys.modules.items()):
+        if mod is None or not (mod_name == _PKG or mod_name.startswith(_PKG + ".")):
+            continue
+        if callable(getattr(mod, "generate_rules", None)):
+            monkeypatch.setattr(mod, "generate_rules", _spy("generate_rules"))
+            patched.append(mod_name)
+
+    # 見張りが空振りしていないことを保証する（改名・移動でテストが無言で
+    # 無意味になるのを防ぐ）。遅延 import 経路は drsa パッケージ側で捕まえる。
+    assert f"{_PKG}.drsa" in patched and f"{_PKG}.drsa.rules" in patched, patched
+
+    # 2) スナップショット取得（ADR 0002 未決のあいだの既定実装）。
     def _spy_fetch(self, *a, **k):
-        calls.append("snapshot_fetch")
-        raise AssertionError("snapshot fetch called on the request path (R-2 違反)")
+        violations.append("snapshot_fetch")
+        raise _R2Violation("スナップショット取得がリクエスト経路で呼ばれた (R-2 違反)")
 
-    # 規則生成: 実体と drsa パッケージ再エクスポートの両方を差し替える
-    #（段3の実装者が from ..drsa import generate_rules と書いても捕まえる）。
-    monkeypatch.setattr(drsa_rules, "generate_rules", _spy_generate_rules)
-    monkeypatch.setattr(drsa_pkg, "generate_rules", _spy_generate_rules, raising=False)
-    # スナップショット取得（ADR 0002 未決のあいだの既定実装）。
     monkeypatch.setattr(repo_mod.UnavailableRepository, "fetch", _spy_fetch)
 
-    # 規則キャッシュへの書き込みもリクエスト経路では起きてはならない（読むだけ）。
+    # 3) 規則キャッシュへの書き込み。リクエスト経路は読むだけ。
     def _spy_put(self, *a, **k):
-        calls.append("rule_cache_put")
-        raise AssertionError("RuleCache.put called on the request path (R-2 違反)")
+        violations.append("rule_cache_put")
+        raise _R2Violation("RuleCache.put がリクエスト経路で呼ばれた (R-2 違反)")
 
     monkeypatch.setattr(RuleCache, "put", _spy_put)
 
-    rc = RuleCache()
-    rc._ruleset = _ruleset_with(100)  # put を潰したので直接セット（テスト都合）
-    rc._decision_table_size = 200
-    rc._gamma = 0.9
+    return violations
+
+
+def test_r2_request_path_does_not_generate_rules_or_fetch_snapshot(run, monkeypatch):
+    rc = _cache_with_rules(100)  # 見張りを付ける前に規則を積む（put も見張り対象）
+    violations = _install_r2_guard(monkeypatch)
 
     resp = run(_req(100), rule_cache=rc)
 
-    assert calls == []
+    assert violations == []
     assert len(resp.scores) == 100  # 契約 C-2 も一応確認
 
 
 def test_r2_also_holds_through_http_route(client, monkeypatch):
-    def _boom(*a, **k):
-        raise AssertionError("regeneration/fetch on request path (R-2 違反)")
-
-    monkeypatch.setattr(drsa_rules, "generate_rules", _boom)
-    monkeypatch.setattr(drsa_pkg, "generate_rules", _boom, raising=False)
-    monkeypatch.setattr(repo_mod.UnavailableRepository, "fetch", _boom)
-
-    # lifespan が張った rule_cache に規則を積んでからリクエストする。
+    # lifespan が張った rule_cache に規則を積んでから見張りを付ける。
     client.app.state.rule_cache.put(_ruleset_with(100), decision_table_size=200, gamma=0.9)
+    violations = _install_r2_guard(monkeypatch)
 
     r = client.post(
         "/recommend/cells",
@@ -142,6 +172,7 @@ def test_r2_also_holds_through_http_route(client, monkeypatch):
             "pre_survey": {"interest_categories": ["cat_1"], "top_interest_category": "cat_1"},
         },
     )
+    assert violations == []
     assert r.status_code == 200
     assert len(r.json()["scores"]) == 100
 
@@ -160,20 +191,21 @@ def test_r2_also_holds_through_http_route(client, monkeypatch):
 _ABSURDLY_SLOW_SEC = 5.0
 
 
-def test_r1_response_within_sane_upper_bound(run):
-    rc = _cache_with_rules(100)
-    req = _req(100)
-
-    run(req, rule_cache=rc)  # ウォームアップ（初回の import / JIT 的コストを除く）
-
-    best = min(_timed(lambda: run(req, rule_cache=rc)) for _ in range(5))
-    assert best < _ABSURDLY_SLOW_SEC, f"候補100件の推薦に {best:.3f}s（明らかに異常）"
-
-
 def _timed(fn) -> float:
     t0 = time.perf_counter()
     fn()
     return time.perf_counter() - t0
+
+
+def test_r1_response_within_sane_upper_bound(run):
+    rc = _cache_with_rules(100)
+    req = _req(100)
+
+    run(req, rule_cache=rc)  # ウォームアップ（初回の import 等のコストを除く）
+
+    # 最良値で判定する。CI の同居プロセスによるスパイクを拾わないため。
+    best = min(_timed(lambda: run(req, rule_cache=rc)) for _ in range(5))
+    assert best < _ABSURDLY_SLOW_SEC, f"候補100件の推薦に {best:.3f}s（明らかに異常）"
 
 
 @pytest.mark.skip(reason="R-3: 段3未結線。予算超過時の COVERAGE 退避先が存在しない (07-testing.md §9)")
