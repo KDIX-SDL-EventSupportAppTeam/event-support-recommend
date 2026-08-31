@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     # --- 性能・キャッシュ ---
     snapshot_ttl_sec: int = 300
     rule_cache_ttl_sec: int = 300
+    # **現在どこからも読まれていない。** 予算を守らせるのは実行時ガード (07-testing.md §9 R-3) で、
+    # その退避先 COVERAGE は段3の結線後にしか存在しない。段3を結線するときに参照させる。
     response_budget_ms: int = 600
 
     # --- 運用 ---

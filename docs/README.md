@@ -70,7 +70,7 @@
 |---|---|
 | [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md) | 決定表のデータをどこから取るか |
 | [09 RD-1](specs/09-research-design.md) | **参加者内ランダム化を実施するか（実装着手前に決める）** |
-| [09 RD-2](specs/09-research-design.md) | 品質ゲートのしきい値（規則3本・γ 0.5・被覆率 0.5） |
+| [09 RD-2](specs/09-research-design.md) | 品質ゲートのしきい値（規則3本・γ 0.5・被覆率 0.5）。測定は [07 §8.1](specs/07-testing.md) の地図（`tools/build_prevalidation_map.py`）。決定は未 |
 | [09 RD-3](specs/09-research-design.md) | 去年ブースへのカテゴリ付与を行うか |
 | [parameter-tuning P-1](specs/parameter-tuning/README.md) | **`/demo` の観測ログ汚染をどう断つか（`recommend_demo` に分ける／抑止する）** |
 | [parameter-tuning P-2](specs/parameter-tuning/README.md) | `/demo` を推薦側に残すか `event-support-analytics` へ移すか |
@@ -78,7 +78,7 @@
 | [02-features F-1](specs/02-features.md) | `exploration_disposition` を有効化するか |
 | [02-features F-2](specs/02-features.md) | `top_interest_category` の設問が採用されるか |
 | [02-features F-3](specs/02-features.md) | `booth_tags` を使うか |
-| [03-phases](specs/03-phases.md) | しきい値 30 / 60（正本は 30 / 180。属性個数に連動） |
+| [03-phases](specs/03-phases.md) | しきい値 30 / 60（正本は 30 / 180。属性個数に連動）。30/60 での規則の出方は [07 §8.1](specs/07-testing.md) の地図を参照。決定は未 |
 | [04-strategies T-1](specs/04-strategies.md) | `MAX_PER_CATEGORY` を有効化するか |
 | [05-drsa D-1](specs/05-drsa.md) | `DRSA_CONSISTENCY` の既定 0.8 |
 
