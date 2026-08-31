@@ -23,8 +23,8 @@ def _req(uid="u1"):
 def test_e1_same_input_same_output(run):
     a = run(_req())
     b = run(_req())
-    assert [(s.booth_id, s.score, s.rank_in_event) for s in a.scores] == [
-        (s.booth_id, s.score, s.rank_in_event) for s in b.scores
+    assert [(s.booth_id, s.score, s.rank) for s in a.scores] == [
+        (s.booth_id, s.score, s.rank) for s in b.scores
     ]
     assert [x.booth_id for x in a.assigned] == [x.booth_id for x in b.assigned]
 

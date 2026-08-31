@@ -68,6 +68,26 @@ def test_c6_score_in_unit_interval(client):
         assert 0.0 <= s["score"] <= 1.0
 
 
+def test_scores_use_contract_field_rank(client):
+    """issue #8 — HTTP 応答は `rank`（契約の正本）。`rank_in_event` は出さない。"""
+    body = client.post("/recommend/cells", json=_payload()).json()
+    for s in body["scores"]:
+        assert "rank" in s
+        assert "rank_in_event" not in s
+        assert isinstance(s["rank"], int)
+
+
+def test_assigned_carries_score_and_rank(client):
+    """issue #8 — assigned[] に契約どおり score / rank が入る。"""
+    body = client.post("/recommend/cells", json=_payload()).json()
+    assert body["assigned"], "assigned が空だと検証にならない"
+    by_id = {s["booth_id"]: s for s in body["scores"]}
+    for a in body["assigned"]:
+        assert "score" in a and "rank" in a
+        assert a["score"] == by_id[a["booth_id"]]["score"]
+        assert a["rank"] == by_id[a["booth_id"]]["rank"]
+
+
 def test_c7_openapi_exposes_recommend_endpoint(client):
     schema = client.get("/openapi.json").json()
     assert "/recommend/cells" in schema["paths"]

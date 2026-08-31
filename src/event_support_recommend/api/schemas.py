@@ -67,9 +67,11 @@ class RecommendRequest(BaseModel):
 
 
 class ScoreOut(BaseModel):
+    # HTTP 契約の正本 (event-support-server .../05-recommender/contract.md) は `rank`。
+    # サーバーの parseScore は `o.rank` しか見ない。DB 列名 rank_in_event とは無関係。
     booth_id: str
     score: float
-    rank_in_event: int
+    rank: int
     was_assigned: bool
     interest_match: str
     attributes: dict[str, Any]
@@ -77,7 +79,10 @@ class ScoreOut(BaseModel):
 
 
 class AssignedOut(BaseModel):
+    # 契約どおり score / rank を持たせる（scores[] と同じ値）。
     booth_id: str
+    score: float
+    rank: int
     attributes: dict[str, Any]
     reason: dict[str, Any]
 
