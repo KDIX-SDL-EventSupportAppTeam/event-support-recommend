@@ -17,7 +17,7 @@ from .. import __version__
 from ..features import ATTRIBUTES_SCHEMA_VERSION
 from ..models import InterestMatch, RecommendationContext, ScoredBooth
 from .base import StrategyUnavailable
-from .common import compute_candidate_features
+from .common import compute_candidate_features, vector_from_features
 
 _INTEREST_TERM = {
     InterestMatch.MATCH: 1.0,
@@ -46,15 +46,7 @@ class DrsaStrategy:
         out: list[ScoredBooth] = []
         for cand in ctx.request.candidates:
             f = feats[cand.booth_id]
-            vector: dict[str, int] = {}
-            for name in enabled:
-                if name == "preference_match":
-                    vector[name] = f.preference_match
-                elif name == "rating_affinity":
-                    vector[name] = f.rating_affinity
-                elif name == "exploration_disposition" and f.exploration_disposition is not None:
-                    vector[name] = f.exploration_disposition
-
+            vector = vector_from_features(f, enabled)
             up, down, matched = ruleset.apply(vector)
             interest_term = _INTEREST_TERM[f.interest_match]
             if not matched:
