@@ -30,11 +30,27 @@ def test_dev_registers_demo_and_ops():
     assert c.get("/health").status_code == 200
 
 
-# --- production: /demo は存在しない (D-3, X-2) --------------------------------
-def test_production_hides_demo():
+# --- production + OPS_TOKEN あり: /demo は登録され token を要求する (ADR 0008 §2) --
+def test_production_with_token_protects_demo():
     c = _client(app_env="production", ops_token="secret")
+    assert c.get("/demo").status_code == 401
+    assert c.post("/demo/run", json={}).status_code == 401
+    assert c.get("/demo", headers={"x-ops-token": "secret"}).status_code == 200
+    assert c.post("/demo/run", json={}, headers={"x-ops-token": "secret"}).status_code == 200
+
+
+# --- production + OPS_TOKEN 未設定: /demo は存在しない (ADR 0008 §2) -----------
+def test_production_without_token_hides_demo():
+    c = _client(app_env="production", ops_token="")
     assert c.get("/demo").status_code == 404
     assert c.post("/demo/run", json={}).status_code == 404
+
+
+def test_demo_page_states_it_is_a_simulator():
+    """Q-5: 「調整したつもり」で当日を迎える事故を画面で防ぐ (ADR 0008 §3)。"""
+    body = _client(app_env="development", ops_token="").get("/demo").text
+    assert "シミュレータ" in body
+    assert "反映されません" in body
 
 
 # --- production + OPS_TOKEN あり: /ops/* は登録され token を要求する (D-4) -----
@@ -70,6 +86,7 @@ def test_startup_log_reports_protection_state(capsys):
     rec = json.loads(lines[-1])
     assert rec["ops_protected"] is True
     assert rec["ops_registered"] is True
+    assert rec["demo_registered"] is True
     assert rec["app_env"] == "production"
     assert rec["strategy"] == "auto"
 
@@ -138,3 +155,4 @@ def test_startup_log_flags_unprotected_ops(capsys):
     )
     assert rec["ops_protected"] is False
     assert rec["ops_registered"] is False
+    assert rec["demo_registered"] is False

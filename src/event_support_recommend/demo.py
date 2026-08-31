@@ -254,7 +254,11 @@ def run_scenarios(overrides: dict | None = None) -> list[ScenarioResult]:
 
     for d in _scenario_defs():
         req = RecommendRequest.model_validate(d["request"])
-        resp = run_recommendation(req, settings=settings, rule_cache=RuleCache())
+        # kind を分け、合成 ID の推薦が研究ログ (kind: "recommend") に混ざらないようにする
+        # (ADR 0008 §1)。
+        resp = run_recommendation(
+            req, settings=settings, rule_cache=RuleCache(), log_kind="recommend_demo"
+        )
         rows = []
         for s in sorted(resp.scores, key=lambda s: s.rank_in_event):
             raw = s.attributes.get("raw", {})
@@ -602,11 +606,18 @@ def build_playground_html() -> str:
 button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid #8886; cursor: pointer;
          background: #8882; }
 .busy { opacity: .5; }
+.warn { border: 1px solid #c62828; border-left-width: 5px; border-radius: 8px; padding: 10px 14px;
+        margin: 12px 0 18px; background: #c628281a; font-size: 13px; line-height: 1.6; }
 """
     return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>推薦エンジン パラメータ プレイグラウンド</title><style>{css}</style></head><body>
 <h1>推薦エンジン パラメータ プレイグラウンド</h1>
+<div class="warn"><b>これはシミュレータです。ここで動かした値は本番に反映されません。</b><br>
+本番のパラメータは Cloud Run の環境変数が正であり、変更するには新しいリビジョンのデプロイが必要です
+（docs/decisions/adrs/0008 §3・parameter-tuning X-1）。<br>
+また<b>当日に本番の観測を見ながらパラメータを変えてはいけません</b>。実験そのものが壊れます
+（docs/specs/10-observability.md §5・X-2）。</div>
 <p class="sub">合成シナリオ（実データではない）。スライダーを動かすと本物の Python エンジンで再計算します。
 <b>目的は精度の最適化ではなく</b>、docs/specs/07-testing.md の不変条件（P-1〜P-6 など）が
 どのパラメータ範囲まで崩れないかを見ることです。</p>
