@@ -31,6 +31,7 @@
 | 09 | [research-design](specs/09-research-design.md) | **実験設計。** 何と何を比べて何を主張するか |
 | 10 | [observability](specs/10-observability.md) | 推薦エンジンが外へ出す観測データ。当日の対応行動 |
 | 11 | [deployment](specs/11-deployment.md) | **Cloud Run へのデプロイ。** 構成・修正すべき点・デプロイ後の確認項目 |
+| — | [runtime-phase-switching](specs/runtime-phase-switching/README.md) | **当日のフェーズ切り替え（段3・段4 の結線）。確定** |
 | — | [parameter-tuning](specs/parameter-tuning/README.md) | パラメータ調整画面（`/demo`）の置き場所とデモログの分離。**確定**（[ADR 0008](decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md)） |
 
 **ダッシュボードの実装仕様は `event-support-analytics` にある**
@@ -41,31 +42,37 @@
 | # | 判断 | 状態 |
 |---|---|---|
 | [0001](decisions/adrs/0001-drsaを自前実装する.md) | DRSA を自前実装する | 採用 |
-| [0002](decisions/adrs/0002-決定表のデータ入手経路.md) | 決定表のデータ入手経路 | **未決定** |
+| [0002](decisions/adrs/0002-決定表のデータ入手経路.md) | 決定表のデータ入手経路 | **採用（案A′ 読み取り専用プロキシ）** |
 | [0003](decisions/adrs/0003-条件属性の構成.md) | 条件属性の構成（2個＋予備1個） | 採用（暫定） |
 | [0004](decisions/adrs/0004-fastapiを採用する.md) | FastAPI を採用する | 採用 |
 | [0005](decisions/adrs/0005-段1と段2のみ実装する.md) | 実装は段1・段2に限る（ADR 0002 未決のため） | 採用 |
 | [0006](decisions/adrs/0006-推薦サービスを未認証で公開する.md) | 推薦サービスを未認証で公開する | 採用 |
 | [0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | 戦略の選択を環境変数（`STRATEGY`）で行う | 採用 |
 | [0008](decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md) | `/demo` は推薦側に残し `OPS_TOKEN` で保護。デモ・リプレイのログを `kind` で分ける | 採用 |
+| [0009](decisions/adrs/0009-当日の切り替えは既定値のまま走らせ調整は事後に行う.md) | 当日は既定値のまま走らせ、パラメータ調整は事後に行う | 採用 |
 
 ## 現在の状態
 
-**段1（`COVERAGE` ＋ `features/`）と段2（`drsa/` コア）を実装済み**
-（[ADR 0005](decisions/adrs/0005-段1と段2のみ実装する.md)）。
+**段1（`COVERAGE` ＋ `features/`）と段2（`drsa/` コア）を実装済み。
+段3・段4 は [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md) の決着により着手可能になった**
+（仕様: [runtime-phase-switching](specs/runtime-phase-switching/README.md)）。
 
 | 項目 | 状態 |
 |---|---|
 | 仕様書 | 一通り揃った（本ページの 01〜10） |
 | 実装 段1・段2 | **済**（`src/event_support_recommend/`、`tests/`） |
 | デプロイ | **実装済・未実施。** [11-deployment.md](specs/11-deployment.md) の D-1〜D-5 と `cloudbuild.yaml` は揃った。残るのは実際のデプロイと §7 の確認（V-1〜V-16） |
-| 実装 段3・段4 | **未着手**（`data/` 結線・規則キャッシュ・`SIMILARITY` / `DRSA`） |
-| [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md)（データ入手経路） | **未決定。`SIMILARITY` / `DRSA` はこれが決まるまで実装しない** |
+| 実装 段3・段4 | **未着手・着手可**（`data/` 結線・規則キャッシュ・`SIMILARITY` / `DRSA`）。仕様は [runtime-phase-switching](specs/runtime-phase-switching/README.md) |
+| [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md)（データ入手経路） | **採用（案A′）。** さくらプロキシの読み取り専用の口。設置一式は `event-support-analytics/deploy/sakura-readonly-proxy/` |
 | [06 の設問要求](specs/06-pre-survey-requirements.md) | サーバー側の承認待ち。**締切はアンケート配布日** |
 
 ## 未決定事項の一覧
 
 決まるまで実装しないもの。**勝手に決めない。**
+
+**ただし、以下はすべて「今回は既定値のまま走らせる」と決めた**
+（[ADR 0009](decisions/adrs/0009-当日の切り替えは既定値のまま走らせ調整は事後に行う.md)）。
+未決定であることは変わらないので一覧からは外さない。値の検証は事後に行う。
 
 | 出典 | 項目 |
 |---|---|
@@ -91,4 +98,4 @@
 | 2 | `admin/survey-questions.ts` が `question_key` / `answer_type` を書き込めない（[06 B-1](specs/06-pre-survey-requirements.md)） |
 | 3 | 本番の事前アンケート設問セットが存在しない（[06 B-2](specs/06-pre-survey-requirements.md)） |
 | 4 | `sample-data/generate.ts` の `custom_answers` が UUID キー・`age_range` が日本語ラベル（[06 B-3](specs/06-pre-survey-requirements.md)） |
-| 5 | `OpsStateClient.fetch()` が認証ヘッダを送らない（[parameter-tuning Q-1](specs/parameter-tuning/README.md)）。`/ops/state` が常に 401 になる。**`event-support-analytics` 側の修正** |
+| ~~5~~ | ~~`OpsStateClient.fetch()` が認証ヘッダを送らない~~ → **解消済み（2026-09-01 確認）。** `X-Ops-Token` を送る実装になっている |
