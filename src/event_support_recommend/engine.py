@@ -265,11 +265,36 @@ def run_recommendation(
         scores=scores_out,
     )
 
+    _emit_phase_changed(log_kind, actual_phase, judged_phase, fallback_reason)
     _log_recommend(
         req, resp, judged_phase, actual_phase, rules_built_at, strategy_name,
         cfg.engine_version or __version__, log_kind, fallback_reason,
     )
     return resp
+
+
+# フェーズが前回と変わった回を1行で特定できるようにするための直近フェーズ記録
+# (docs/specs/runtime-phase-switching/04-observability.md「ログ」)。log_kind ごとに分ける
+# ので、デモ・リプレイの切り替わりが研究ログの phase_changed に混ざらない。
+_last_phase_by_kind: dict[str, str] = {}
+
+
+def _emit_phase_changed(
+    log_kind: str, actual_phase: Phase, judged_phase: Phase, fallback_reason: str | None
+) -> None:
+    prev = _last_phase_by_kind.get(log_kind)
+    _last_phase_by_kind[log_kind] = actual_phase.value
+    if prev is not None and prev != actual_phase.value:
+        jsonl.emit(
+            "phase_changed",
+            {
+                "from": prev,
+                "to": actual_phase.value,
+                "judged_phase": judged_phase.value,
+                "fallback_reason": fallback_reason,
+                "log_kind": log_kind,
+            },
+        )
 
 
 def _coverage_fallback_scored(ctx: RecommendationContext, cfg: RuntimeConfig) -> list[ScoredBooth]:

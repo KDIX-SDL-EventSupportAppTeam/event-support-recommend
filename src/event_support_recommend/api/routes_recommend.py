@@ -49,12 +49,15 @@ async def recommend_cells(request: Request) -> RecommendResponse:
         request.app.state.last_event_id = str(eid)
 
     try:
-        return run_recommendation(
+        resp = run_recommendation(
             payload,
             settings=settings,
             rule_cache=_rule_cache(request),
             snapshot_cache=_snapshot_cache(request),
         )
+        # /ops/state が「実際に返した phase」を語れるようにする (04-observability.md T-44)。
+        request.app.state.last_phase = resp.phase
+        return resp
     except Exception as exc:  # pragma: no cover - 最終防御
         jsonl.emit("recommend", {"error": f"unhandled: {exc!r}"})
         return _empty_response()
