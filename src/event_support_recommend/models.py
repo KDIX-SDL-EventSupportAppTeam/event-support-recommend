@@ -183,6 +183,9 @@ class RecommendationContext:
     # 実行できず COVERAGE へ退避する (docs/specs/04-strategies.md §5)。循環 import を避け
     # 型注釈は文字列参照のまま（typing.TYPE_CHECKING でだけ解決）。
     snapshot_data: "object | None" = None
+    # DRSA がリクエスト時に当てはめるキャッシュ済み規則（drsa.RuleSet）。
+    # 規則生成はしない。0本／未構築なら SIMILARITY へ退避する。
+    ruleset: "object | None" = None
 
 
 @dataclass

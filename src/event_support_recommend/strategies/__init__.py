@@ -12,6 +12,7 @@ ADR 0002（データ入手経路）の決着待ちで未実装 (docs/specs/08-ar
 
 from .base import Strategy, StrategyUnavailable
 from .coverage import CoverageStrategy
+from .drsa import DrsaStrategy
 from .random import RandomStrategy
 from .registry import resolve_strategy
 from .similarity import SimilarityStrategy
@@ -22,5 +23,6 @@ __all__ = [
     "CoverageStrategy",
     "RandomStrategy",
     "SimilarityStrategy",
+    "DrsaStrategy",
     "resolve_strategy",
 ]
