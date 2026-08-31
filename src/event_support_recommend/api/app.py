@@ -14,8 +14,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 from .. import __version__, logging as jsonl
-from ..cache import RuleCache
+from ..cache import RuleCache, SnapshotCache
 from ..data import SnapshotRefresher, build_repository
+from ..snapshot_build import refresh_caches
 from ..settings import Settings, get_settings
 from ..strategies import resolve_strategy
 from .routes_ops import (
@@ -32,17 +33,28 @@ async def lifespan(app: FastAPI):
     settings = getattr(app.state, "settings", None) or get_settings()
     app.state.settings = settings
     app.state.rule_cache = RuleCache()
+    app.state.snapshot_cache = SnapshotCache()
     _, strategy_note = resolve_strategy(settings.strategy, is_production=settings.is_production)
 
     # 段3 — スナップショットの定期再取得。READONLY_PROXY_URL が空なら起動しない
-    # （= COVERAGE 固定で動く、01-snapshot-source.md）。決定表の組み立て（段3-b）は
-    # on_snapshot コールバックで後から結線する。
+    # （= COVERAGE 固定で動く、01-snapshot-source.md）。取得できた1周ごとに
+    # refresh_caches が決定表・規則・近傍データを作って両キャッシュへ入れる（段3-b）。
     refresher: SnapshotRefresher | None = None
     snapshot_wired = bool(settings.readonly_proxy_url.strip())
+
+    def _on_snapshot(snap) -> None:
+        refresh_caches(
+            snap,
+            settings=settings,
+            rule_cache=app.state.rule_cache,
+            snapshot_cache=app.state.snapshot_cache,
+        )
+
     if snapshot_wired:
         refresher = SnapshotRefresher(
             build_repository(settings),
             interval_sec=settings.snapshot_ttl_sec,
+            on_snapshot=_on_snapshot,
             event_id_getter=lambda: (
                 settings.snapshot_event_id or getattr(app.state, "last_event_id", None)
             ),
