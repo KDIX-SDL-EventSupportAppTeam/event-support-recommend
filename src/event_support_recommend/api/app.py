@@ -41,6 +41,8 @@ async def lifespan(app: FastAPI):
     # refresh_caches が決定表・規則・近傍データを作って両キャッシュへ入れる（段3-b）。
     refresher: SnapshotRefresher | None = None
     snapshot_wired = bool(settings.readonly_proxy_url.strip())
+    # /ops/rebuild が使う。プロキシ未設定なら UnavailableRepository。
+    app.state.snapshot_repo = build_repository(settings)
 
     def _on_snapshot(snap) -> None:
         refresh_caches(
