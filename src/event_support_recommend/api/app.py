@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse
 
 from .. import __version__, logging as jsonl
 from ..cache import RuleCache
+from ..data import SnapshotRefresher, build_repository
 from ..settings import Settings, get_settings
 from ..strategies import resolve_strategy
 from .routes_ops import (
@@ -32,8 +33,23 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.rule_cache = RuleCache()
     _, strategy_note = resolve_strategy(settings.strategy, is_production=settings.is_production)
-    # 段3（ADR 0002 決着後）でスナップショット取得と5分ごとの規則再生成を起動する。
-    # 現状は取得経路が未結線のため、規則キャッシュは空のまま = SIMILARITY 以下で運用。
+
+    # 段3 — スナップショットの定期再取得。READONLY_PROXY_URL が空なら起動しない
+    # （= COVERAGE 固定で動く、01-snapshot-source.md）。決定表の組み立て（段3-b）は
+    # on_snapshot コールバックで後から結線する。
+    refresher: SnapshotRefresher | None = None
+    snapshot_wired = bool(settings.readonly_proxy_url.strip())
+    if snapshot_wired:
+        refresher = SnapshotRefresher(
+            build_repository(settings),
+            interval_sec=settings.snapshot_ttl_sec,
+            event_id_getter=lambda: (
+                settings.snapshot_event_id or getattr(app.state, "last_event_id", None)
+            ),
+        )
+        refresher.start()
+    app.state.snapshot_refresher = refresher
+
     jsonl.emit(
         "startup",
         {
@@ -46,11 +62,14 @@ async def lifespan(app: FastAPI):
             "ops_protected": bool(settings.ops_token),
             "ops_registered": getattr(app.state, "ops_registered", True),
             "demo_registered": getattr(app.state, "demo_registered", True),
-            "snapshot_wired": False,
-            "note": "SIMILARITY/DRSA are not wired (ADR 0002 undecided).",
+            "snapshot_wired": snapshot_wired,
         },
     )
-    yield
+    try:
+        yield
+    finally:
+        if refresher is not None:
+            await refresher.stop()
 
 
 def _register_demo(app: FastAPI) -> None:

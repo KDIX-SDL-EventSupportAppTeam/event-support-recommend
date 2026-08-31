@@ -125,13 +125,20 @@ class DrsaRuleView:
 
 @dataclass
 class EventSnapshot:
-    """層2。取得経路 (ADR 0002) は未決。built なら decision_table_size が数値。"""
+    """層2。取得経路は ADR 0002（さくら読み取り専用プロキシ）。
+
+    `built` は「プロキシから行を取得できた」の意。決定表の組み立て（段3-b）は
+    別工程なので、`fetch()` 直後は `decision_table_size` はまだ None でありうる。
+    """
 
     built: bool
     built_at: datetime | None = None
     decision_table_size: int | None = None
     participants: int = 0
     booths: int = 0
+    # data/ 層が取得した生の行。テーブル名 → 行(dict)のリスト。
+    # 決定表・近傍計算の材料。段3-b がここから組み立てる。
+    tables: dict[str, list[dict]] = field(default_factory=dict)
     # 段3/段4 で埋める。現状は常に空。
     decision_table: list[dict] = field(default_factory=list)
 
