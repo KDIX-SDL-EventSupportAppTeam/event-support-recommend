@@ -11,7 +11,7 @@
 
 | §9 の手順 | 状態 |
 |---|---|
-| 1. `.dockerignore`（D-1）＋ ローカル `docker build` / `docker run`（D-5） | **済**（`APP_ENV=production` で起動し `/health` 200・`/ready` 503・`/demo` 404・`/ops/state` 401 を確認） |
+| 1. `.dockerignore`（D-1）＋ ローカル `docker build` / `docker run`（D-5） | **済**（`APP_ENV=production` で起動し `/health` 200・`/ready` 503・`/ops/state` 401 を確認。**`/demo` は ADR 0008 で 401 に変わった**） |
 | 2. `APP_ENV` と `/demo`・`/ops/*` の条件付き登録（D-3・D-4） | **済**（`api/app.py` の `create_app()`・`tests/test_deployment.py`） |
 | 3. `STRATEGY` レジストリ（ADR 0007） | **済**（`strategies/registry.py`・`strategies/random.py`） |
 | 4. `cloudbuild.yaml`（§1・§3） | **済** |
@@ -92,13 +92,19 @@ tests docs tools
 
 [app.py](../../src/event_support_recommend/api/app.py) の `/demo` はパラメータ調整プレイグラウンド。§4 の方針でサービスを未認証公開にする以上、**本番では URL を知る誰でも開ける。**
 
-- `APP_ENV=production` では `/demo` `/demo/run` を**登録しない**（404）
-- 「認証をかける」ではなく「存在させない」。ルーティング自体を条件付きにする
+**[ADR 0008](../decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md) で決着した**
+（当初の「本番では常に 404」は暫定措置だった。P-1・P-2 の未決が理由であり、両方とも決まった）。
 
-**この 404 は暫定である。** `/demo` の最終的な置き場所と、
-`/demo/run` が観測ログを汚す問題（`run_recommendation()` が JSONL を出す）は
-[parameter-tuning/README.md](parameter-tuning/README.md) で検討中・**未決定**。
-**決着まではこの 404 で塞いでおく**（塞いだ状態がいちばん安全側であり、デプロイを止める理由にはならない）。
+- **`/demo` は `/ops/*` と同じ条件で登録し、同じ `require_ops()` で保護する**
+- `APP_ENV=production` かつ `OPS_TOKEN` 未設定なら、`/ops/*` ともども**登録しない**（404）
+- ログ汚染（`run_recommendation()` が JSONL を出す問題）は
+  `kind: "recommend_demo"` への分離で断つ（ADR 0008 §1）
+
+| `APP_ENV` | `OPS_TOKEN` | `/ops/*` | `/demo` |
+|---|---|---|---|
+| production | あり | 401 / 200 | **401 / 200** |
+| production | なし | 404 | **404** |
+| development | — | 素通し | 素通し |
 
 ### D-4 `OPS_TOKEN` 未設定時に `/ops/*` が素通しになる
 
@@ -124,7 +130,7 @@ tests docs tools
 
 | 変数 | 既定 | 意味 |
 |---|---|---|
-| `APP_ENV` | `development` | `production` で `/demo` を無効化し、`OPS_TOKEN` 未設定時に `/ops/*` を無効化する（D-3・D-4） |
+| `APP_ENV` | `development` | `production` かつ `OPS_TOKEN` 未設定なら `/ops/*` と `/demo` を無効化する（D-3・D-4・ADR 0008） |
 | `STRATEGY` | `auto` | 戦略の選択。`auto` / `coverage` / `random`（[ADR 0007](../decisions/adrs/0007-戦略の選択を環境変数で行う.md)） |
 
 **この2つ以外の新規変数を増やさない。** 既存の変数は [08-architecture.md](08-architecture.md) §4 が正本。
@@ -156,7 +162,7 @@ tests docs tools
 - 本サービスは **DB へ書かない・氏名や連絡先を受け取らない・状態を持たない**
 - 残るリスクは**計算資源の浪費**と**研究データの汚染**。前者は `--max-instances` で頭打ちにし、後者は §5 で扱う
 
-**ただし `/ops/*` は `OPS_TOKEN` で保護し、`/demo` は本番で消す**（D-3・D-4）。無防備にしてよいのは `/recommend/cells` と `/health` だけ。
+**ただし `/ops/*` と `/demo` は `OPS_TOKEN` で保護する**（D-3・D-4）。無防備にしてよいのは `/recommend/cells` と `/health` だけ。
 
 ---
 
@@ -199,7 +205,8 @@ tests docs tools
 | V-2 | `GET /ready` | **503。これが正常**（段3未結線） |
 | V-3 | `GET /ops/state` トークン無し | **401** |
 | V-4 | `GET /ops/state` トークン有り | 200・`phase.current` が `COVERAGE`・`decision_table_size` が `null` |
-| V-5 | `GET /demo` | **404**（`APP_ENV=production`） |
+| V-5 | `GET /demo` トークン無し | **401**（`OPS_TOKEN` 設定時。未設定なら 404。ADR 0008 §2） |
+| V-5b | `GET /demo` トークン有り | 200・画面上部に「これはシミュレータ」の警告が出ている（Q-5） |
 | V-6 | `POST /recommend/cells` 正常ボディ | 200・`scores` が候補全件・`assigned` が `cell_count` 件 |
 | V-7 | `POST /recommend/cells` 壊れたボディ（空・不正 JSON・型違い） | **200。500 も 422 も返らない**（[01-io-contract.md](01-io-contract.md) O-6） |
 | V-8 | 同一リクエストを2回 | **完全に同じ出力**（シードが効いている） |
@@ -231,7 +238,7 @@ tests docs tools
 | # | 禁止 | 破ると |
 |---|---|---|
 | X-1 | `/ready` を Cloud Run のプローブに指定する | **リビジョンが永久に起動しない** |
-| X-2 | `APP_ENV=production` で `/demo` が生きている | 誰でもパラメータを試せる。誤解を招く画面が公開される |
+| X-2 | `/demo` を `OPS_TOKEN` 無しで本番に出す | 誰でもパラメータを試せる。計算資源の増幅口にもなる（ADR 0008 §2・Q-3） |
 | X-3 | `OPS_TOKEN` 未設定のまま本番へ出す | `/ops/*` が無認証で読める（D-4 の実装があれば 404 で止まる） |
 | X-4 | サーバーの `cloudbuild.yaml` をそのままコピーする | `--session-affinity` / `--max-instances=1` / `--timeout=3600` を意味なく継承する（§1） |
 | X-5 | しきい値を Cloud Run の env で上書きした状態を既定にする | **当日の変更点が見分けられなくなる**（§3） |

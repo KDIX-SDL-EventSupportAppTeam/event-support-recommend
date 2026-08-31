@@ -29,7 +29,8 @@ def _rule_cache(request: Request) -> RuleCache:
     return rc if isinstance(rc, RuleCache) else RuleCache()
 
 
-def _require_ops(request: Request) -> None:
+def require_ops(request: Request) -> None:
+    """`/ops/*` と `/demo` の共通ガード (ADR 0008 §2)。未設定なら開発用に素通しする。"""
     token = _settings(request).ops_token
     if not token:
         return  # 未設定なら開発用に素通し
@@ -72,7 +73,7 @@ async def ready(request: Request) -> Response:
 
 @router.get("/ops/state")
 async def ops_state(request: Request) -> dict:
-    _require_ops(request)
+    require_ops(request)
     s = _settings(request)
     rc = _rule_cache(request)
     rules_state = rc.snapshot_state()
@@ -117,16 +118,25 @@ async def ops_state(request: Request) -> dict:
 
 @router.post("/ops/rebuild")
 async def ops_rebuild(request: Request) -> dict:
-    _require_ops(request)
+    require_ops(request)
     # スナップショット取得が未結線のため、現状は再生成対象が無い。
     return {"rebuilt": False, "reason": "snapshot path not wired (ADR 0002)"}
 
 
 @router.post("/ops/replay")
 async def ops_replay(request: Request) -> dict:
-    """保存済みリクエストを再実行して出力を返す。アルゴリズム変更時の回帰確認。"""
-    _require_ops(request)
+    """保存済みリクエストを再実行して出力を返す。アルゴリズム変更時の回帰確認。
+
+    **本物の `user_id` で走るため、ログの kind を分けないと研究ログと区別できなくなる**
+    (ADR 0008 §1)。
+    """
+    require_ops(request)
     body = await request.json()
     payload = RecommendRequest.model_validate(body)
-    resp = run_recommendation(payload, settings=_settings(request), rule_cache=_rule_cache(request))
+    resp = run_recommendation(
+        payload,
+        settings=_settings(request),
+        rule_cache=_rule_cache(request),
+        log_kind="recommend_replay",
+    )
     return resp.model_dump()

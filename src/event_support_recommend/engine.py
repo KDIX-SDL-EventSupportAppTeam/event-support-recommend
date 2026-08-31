@@ -148,14 +148,21 @@ def run_recommendation(
     settings: Settings,
     rule_cache: RuleCache,
     now: datetime | None = None,
+    log_kind: str = "recommend",
 ) -> RecommendResponse:
+    """推薦を1回実行する。
+
+    ``log_kind`` は JSONL の ``kind``。本番経路は既定の ``"recommend"``。
+    デモ・リプレイは別の値を渡して研究ログと混ぜない
+    (ADR 0008 §1, docs/specs/parameter-tuning/README.md P-1)。
+    """
     now = now or datetime.now(timezone.utc)
     cfg = _runtime_config(settings)
 
     try:
         ctx = _build_context(req, cfg, now)
     except Exception as exc:  # pragma: no cover - 防御
-        jsonl.emit("recommend", {"error": f"context_build_failed: {exc!r}", "user_id": req.user_id})
+        jsonl.emit(log_kind, {"error": f"context_build_failed: {exc!r}", "user_id": req.user_id})
         return _empty_response()
 
     if not ctx.request.candidates:
@@ -240,7 +247,7 @@ def run_recommendation(
 
     _log_recommend(
         req, resp, judged_phase, actual_phase, rules_built_at, strategy.name,
-        cfg.engine_version or __version__,
+        cfg.engine_version or __version__, log_kind,
     )
     return resp
 
@@ -253,9 +260,10 @@ def _log_recommend(
     rules_built_at: datetime | None,
     strategy_name: str,
     engine_version: str,
+    log_kind: str = "recommend",
 ) -> None:
     jsonl.emit(
-        "recommend",
+        log_kind,
         {
             "user_id": req.user_id,
             # 本番はコミット SHA。当日の設定変更の前後を分ける唯一の手がかり

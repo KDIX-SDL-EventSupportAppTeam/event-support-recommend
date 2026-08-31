@@ -94,3 +94,44 @@ def test_demo_endpoints(client):
     body = r.json()
     assert body["params"]["w_interest"] == 0.9
     assert len(body["scenarios"]) == 6
+
+
+# --------------------------------------------------------------------------- #
+# P-1 — デモ・リプレイの推薦が研究ログ (kind: "recommend") を汚さないこと
+# (ADR 0008 §1, docs/specs/parameter-tuning/README.md §2)
+# --------------------------------------------------------------------------- #
+def _kinds(captured: str) -> set[str]:
+    import json
+
+    return {json.loads(l)["kind"] for l in captured.splitlines() if l.startswith("{")}
+
+
+def test_demo_run_never_emits_kind_recommend(client, capsys):
+    """★ これが破れると、合成 ID (u_alice 等) の推薦が本物と同じ kind で混ざる。"""
+    capsys.readouterr()
+    assert client.post("/demo/run", json={}).status_code == 200
+    kinds = _kinds(capsys.readouterr().out)
+    assert "recommend" not in kinds, "デモの推薦が研究ログに混ざっている"
+    assert "recommend_demo" in kinds, "デモの推薦が記録されていない（案 b になっている）"
+
+
+def test_ops_replay_never_emits_kind_recommend(client, capsys):
+    """リプレイは本物の user_id で走るので、合成 ID より紛れ込みやすい。"""
+    from conftest import make_request
+
+    payload = make_request(user_id="u_real").model_dump(mode="json")
+    capsys.readouterr()
+    assert client.post("/ops/replay", json=payload).status_code == 200
+    kinds = _kinds(capsys.readouterr().out)
+    assert "recommend" not in kinds, "リプレイが研究ログに混ざっている"
+    assert "recommend_replay" in kinds
+
+
+def test_production_path_keeps_kind_recommend(client, capsys):
+    """逆方向の固定: 本番経路の kind は変えていない（既存の分析経路を壊さない）。"""
+    from conftest import make_request
+
+    payload = make_request().model_dump(mode="json")
+    capsys.readouterr()
+    assert client.post("/recommend/cells", json=payload).status_code == 200
+    assert "recommend" in _kinds(capsys.readouterr().out)

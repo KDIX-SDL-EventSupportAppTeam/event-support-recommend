@@ -31,7 +31,7 @@
 | 09 | [research-design](specs/09-research-design.md) | **実験設計。** 何と何を比べて何を主張するか |
 | 10 | [observability](specs/10-observability.md) | 推薦エンジンが外へ出す観測データ。当日の対応行動 |
 | 11 | [deployment](specs/11-deployment.md) | **Cloud Run へのデプロイ。** 構成・修正すべき点・デプロイ後の確認項目 |
-| — | [parameter-tuning](specs/parameter-tuning/README.md) | パラメータ調整・監視の置き場所（analytics への集約）。**草案・未決定** |
+| — | [parameter-tuning](specs/parameter-tuning/README.md) | パラメータ調整画面（`/demo`）の置き場所とデモログの分離。**確定**（[ADR 0008](decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md)） |
 
 **ダッシュボードの実装仕様は `event-support-analytics` にある**
 （`docs/specs/recommendation-evaluation/`）。本リポジトリは観測データの提供までを担う。
@@ -47,6 +47,7 @@
 | [0005](decisions/adrs/0005-段1と段2のみ実装する.md) | 実装は段1・段2に限る（ADR 0002 未決のため） | 採用 |
 | [0006](decisions/adrs/0006-推薦サービスを未認証で公開する.md) | 推薦サービスを未認証で公開する | 採用 |
 | [0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | 戦略の選択を環境変数（`STRATEGY`）で行う | 採用 |
+| [0008](decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md) | `/demo` は推薦側に残し `OPS_TOKEN` で保護。デモ・リプレイのログを `kind` で分ける | 採用 |
 
 ## 現在の状態
 
@@ -72,8 +73,6 @@
 | [09 RD-1](specs/09-research-design.md) | **参加者内ランダム化を実施するか（実装着手前に決める）** |
 | [09 RD-2](specs/09-research-design.md) | 品質ゲートのしきい値（規則3本・γ 0.5・被覆率 0.5）。測定は [07 §8.1](specs/07-testing.md) の地図（`tools/build_prevalidation_map.py`）。決定は未 |
 | [09 RD-3](specs/09-research-design.md) | 去年ブースへのカテゴリ付与を行うか |
-| [parameter-tuning P-1](specs/parameter-tuning/README.md) | **`/demo` の観測ログ汚染をどう断つか（`recommend_demo` に分ける／抑止する）** |
-| [parameter-tuning P-2](specs/parameter-tuning/README.md) | `/demo` を推薦側に残すか `event-support-analytics` へ移すか |
 | [ADR 0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | **`RANDOM` に P-6 を課すか、対照群としての乱択性を採るか。** ADR は両方を要求しているが両立しない（P-6 を守るとクラス内が同点になり、順位が `visitor_count` 昇順で決まって COVERAGE と同じ反人気バイアスが残る）。現状は ADR の明文どおり P-6 を優先。事前検証で下限として使う前に決める |
 | [02-features F-1](specs/02-features.md) | `exploration_disposition` を有効化するか |
 | [02-features F-2](specs/02-features.md) | `top_interest_category` の設問が採用されるか |
@@ -92,3 +91,4 @@
 | 2 | `admin/survey-questions.ts` が `question_key` / `answer_type` を書き込めない（[06 B-1](specs/06-pre-survey-requirements.md)） |
 | 3 | 本番の事前アンケート設問セットが存在しない（[06 B-2](specs/06-pre-survey-requirements.md)） |
 | 4 | `sample-data/generate.ts` の `custom_answers` が UUID キー・`age_range` が日本語ラベル（[06 B-3](specs/06-pre-survey-requirements.md)） |
+| 5 | `OpsStateClient.fetch()` が認証ヘッダを送らない（[parameter-tuning Q-1](specs/parameter-tuning/README.md)）。`/ops/state` が常に 401 になる。**`event-support-analytics` 側の修正** |
