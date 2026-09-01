@@ -125,13 +125,20 @@ class DrsaRuleView:
 
 @dataclass
 class EventSnapshot:
-    """層2。取得経路 (ADR 0002) は未決。built なら decision_table_size が数値。"""
+    """層2。取得経路は ADR 0002（さくら読み取り専用プロキシ）。
+
+    `built` は「プロキシから行を取得できた」の意。決定表の組み立て（段3-b）は
+    別工程なので、`fetch()` 直後は `decision_table_size` はまだ None でありうる。
+    """
 
     built: bool
     built_at: datetime | None = None
     decision_table_size: int | None = None
     participants: int = 0
     booths: int = 0
+    # data/ 層が取得した生の行。テーブル名 → 行(dict)のリスト。
+    # 決定表・近傍計算の材料。段3-b がここから組み立てる。
+    tables: dict[str, list[dict]] = field(default_factory=dict)
     # 段3/段4 で埋める。現状は常に空。
     decision_table: list[dict] = field(default_factory=list)
 
@@ -158,6 +165,8 @@ class RuntimeConfig:
     experiment_arm_b: str
     interest_partial: float = 0.6
     interest_mismatch: float = 0.2
+    similarity_neighbors: int = 20
+    similarity_shrinkage: float = 5.0
     # 本番はコミット SHA。reason.engine.version に刻んで「どのリビジョンが出した推薦か」を
     # 行だけで判別できるようにする (docs/specs/01-io-contract.md §3.3 (1),
     # docs/specs/11-deployment.md §3・X-6, docs/specs/09-research-design.md R-2)。
@@ -170,6 +179,13 @@ class RecommendationContext:
     participant: Participant
     snapshot: EventSnapshot
     config: RuntimeConfig
+    # SIMILARITY が近傍計算に使う生データ（cache.SnapshotData）。無ければ SIMILARITY は
+    # 実行できず COVERAGE へ退避する (docs/specs/04-strategies.md §5)。循環 import を避け
+    # 型注釈は文字列参照のまま（typing.TYPE_CHECKING でだけ解決）。
+    snapshot_data: "object | None" = None
+    # DRSA がリクエスト時に当てはめるキャッシュ済み規則（drsa.RuleSet）。
+    # 規則生成はしない。0本／未構築なら SIMILARITY へ退避する。
+    ruleset: "object | None" = None
 
 
 @dataclass
