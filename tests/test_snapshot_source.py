@@ -159,7 +159,7 @@ def test_t8_users_columns_cannot_include_secrets():
 
 def test_event_scoping_written_once_in_data_layer():
     sql, params = build_select("check_ins", "ev-42")
-    assert "WHERE `event_id` = %s" in sql and params == ["ev-42"]
+    assert "WHERE `event_id` = ?" in sql and params == ["ev-42"]
     sql2, params2 = build_select("categories", "ev-42")
     assert params2 == ["ev-42"]
 

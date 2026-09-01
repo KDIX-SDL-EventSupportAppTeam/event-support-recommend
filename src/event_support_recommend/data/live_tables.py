@@ -45,7 +45,8 @@ def build_select(table: str, event_id: str | None) -> tuple[str, list]:
 
     - `LIVE_TABLES` に無いテーブルは拒否する（送信前）
     - `FORBIDDEN_COLUMNS` が定義に混入していたら拒否する（送信前）
-    - `EVENT_SCOPED_TABLES` かつ `event_id` が与えられていれば `WHERE event_id = %s` を付ける
+    - `EVENT_SCOPED_TABLES` かつ `event_id` が与えられていれば `WHERE event_id = ?`
+      （プレースホルダは `?`。プロキシは mysql2 互換 = event-support-server/src/db/http-proxy.ts） を付ける
     """
     if table not in LIVE_TABLES:
         raise ProxyError(f"unknown table {table!r}")
@@ -58,6 +59,6 @@ def build_select(table: str, event_id: str | None) -> tuple[str, list]:
     sql = f"SELECT {col_sql} FROM `{table}`"
     params: list = []
     if table in EVENT_SCOPED_TABLES and event_id:
-        sql += " WHERE `event_id` = %s"
+        sql += " WHERE `event_id` = ?"
         params.append(event_id)
     return sql, params
