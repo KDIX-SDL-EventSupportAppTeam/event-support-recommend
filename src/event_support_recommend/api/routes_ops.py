@@ -133,10 +133,12 @@ async def ops_replay(request: Request) -> dict:
     require_ops(request)
     body = await request.json()
     payload = RecommendRequest.model_validate(body)
+    sc = getattr(request.app.state, "snapshot_cache", None)
     resp = run_recommendation(
         payload,
         settings=_settings(request),
         rule_cache=_rule_cache(request),
+        snapshot_cache=sc,
         log_kind="recommend_replay",
     )
     return resp.model_dump()
