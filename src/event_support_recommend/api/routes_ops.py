@@ -5,13 +5,17 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from ..cache import RuleCache
+from ..cache import RuleCache, SnapshotCache
+from ..data import build_repository
 from ..engine import run_recommendation
 from ..phases import decide_phase, evaluate_quality_gate
 from ..settings import Settings, get_settings
+from ..snapshot_build import refresh_caches
 from .schemas import RecommendRequest
 
 # /health /ready は常時公開（Cloud Run プローブ・監視）。/ops/* だけを条件付き登録する
@@ -27,6 +31,11 @@ def _settings(request: Request) -> Settings:
 def _rule_cache(request: Request) -> RuleCache:
     rc = getattr(request.app.state, "rule_cache", None)
     return rc if isinstance(rc, RuleCache) else RuleCache()
+
+
+def _snapshot_cache(request: Request) -> SnapshotCache:
+    sc = getattr(request.app.state, "snapshot_cache", None)
+    return sc if isinstance(sc, SnapshotCache) else SnapshotCache()
 
 
 def require_ops(request: Request) -> None:
@@ -56,16 +65,19 @@ async def health(request: Request) -> dict:
 async def ready(request: Request) -> Response:
     """スナップショット・規則が温まっているか（監視用）。
 
-    段3 未結線なので本番では永久に 503 を返す（仕様どおりの正しい挙動）。
-    **Cloud Run の startup / liveness プローブに使ってはいけない**
-    (docs/specs/11-deployment.md D-2, X-1)。使うとリビジョンが永久に起動しない。
-    プローブは依存ゼロで即答する `/health` を使うこと。
+    スナップショットと規則が温まったかを表す（段3・段4 結線後の意味）。
+
+    **それでも Cloud Run の startup / liveness プローブに使ってはいけない**
+    (docs/specs/11-deployment.md D-2, 04-observability.md T-47)。規則が0本でも
+    サービスは正常（COVERAGE で応答できる）であり、プローブにすると正常なリビジョンが
+    起動しない。プローブは依存ゼロで即答する `/health`。ここは監視用途に限る。
     """
     rc = _rule_cache(request)
+    sc = _snapshot_cache(request)
     payload = {
         "ready": rc.ready,
         "rules": rc.ready,
-        "snapshot_wired": False,
+        "snapshot_ok": sc.ready,
         "note": "monitoring only; do not use as a Cloud Run probe (see 11-deployment.md D-2)",
     }
     return JSONResponse(payload, status_code=200 if rc.ready else 503)
@@ -76,17 +88,21 @@ async def ops_state(request: Request) -> dict:
     require_ops(request)
     s = _settings(request)
     rc = _rule_cache(request)
+    sc = _snapshot_cache(request)
     rules_state = rc.snapshot_state()
+    snap_state = sc.snapshot_state()
     size = rc.decision_table_size
     gate = evaluate_quality_gate(
         size, rules_state["count_certain_up"], rc.gamma, 0.0, s
     )
-    phase = decide_phase(size, s, gate=gate)
+    judged = decide_phase(size, s, gate=gate)
+    # 「実際に返した phase」を優先して返す (T-44)。まだ1件も推薦していなければ判定値。
+    current = getattr(request.app.state, "last_phase", None) or judged.value
     return {
         "engine_version": s.resolved_engine_version,
         "snapshot": {
-            "built_at": rules_state["built_at"],
-            "ok": rc.ready,
+            "built_at": snap_state["built_at"] or rules_state["built_at"],
+            "ok": sc.ready or rc.ready,
             "decision_table_size": size,
         },
         "rules": {
@@ -98,7 +114,8 @@ async def ops_state(request: Request) -> dict:
             "consistency_level": rules_state["consistency_level"] or s.drsa_consistency,
         },
         "phase": {
-            "current": phase.value,
+            "current": current,
+            "judged": judged.value,
             "quality_gate_passed": gate.passed,
             "gate_detail": gate.detail.as_dict(),
         },
@@ -112,15 +129,37 @@ async def ops_state(request: Request) -> dict:
             "enabled_attributes": list(s.enabled_attributes),
             "default_phase_drsa_min": s.default_phase_drsa_min,
         },
-        "notes": ["SIMILARITY/DRSA not wired: ADR 0002 undecided"],
+        "notes": [],
     }
 
 
 @router.post("/ops/rebuild")
 async def ops_rebuild(request: Request) -> dict:
+    """その場でスナップショット取得と規則再生成を1周させる（調査手段。通常は使わない）。
+
+    5分ごとの自動更新で足りるが、「フェーズが上がるはずなのに上がらない」ときに使う
+    (docs/specs/runtime-phase-switching/04-observability.md)。
+    """
     require_ops(request)
-    # スナップショット取得が未結線のため、現状は再生成対象が無い。
-    return {"rebuilt": False, "reason": "snapshot path not wired (ADR 0002)"}
+    s = _settings(request)
+    rc = _rule_cache(request)
+    sc = _snapshot_cache(request)
+    repo = getattr(request.app.state, "snapshot_repo", None) or build_repository(s)
+    event_id = s.snapshot_event_id or getattr(request.app.state, "last_event_id", None)
+
+    before = rc.decision_table_size
+    try:
+        snapshot = await asyncio.to_thread(repo.fetch, event_id)
+        refresh_caches(snapshot, settings=s, rule_cache=rc, snapshot_cache=sc)
+    except Exception as exc:  # pragma: no cover - 防御。前回キャッシュは保持される
+        return {"rebuilt": False, "reason": f"rebuild failed: {exc!r}",
+                "decision_table_size": before}
+    return {
+        "rebuilt": bool(getattr(snapshot, "built", False)),
+        "snapshot_ok": bool(getattr(snapshot, "built", False)),
+        "previous_decision_table_size": before,
+        "decision_table_size": rc.decision_table_size,
+    }
 
 
 @router.post("/ops/replay")
