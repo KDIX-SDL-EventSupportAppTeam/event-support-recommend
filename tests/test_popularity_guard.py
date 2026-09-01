@@ -105,5 +105,5 @@ def test_p6_same_interest_match_sorted_by_visitor_count_asc(run):
     )
     resp = run(req)
     # 全て MISMATCH。rank_in_event が visitor_count 昇順に一致する
-    by_rank = sorted(resp.scores, key=lambda s: s.rank_in_event)
+    by_rank = sorted(resp.scores, key=lambda s: s.rank)
     assert [s.booth_id for s in by_rank] == ["m_lo", "m_mid", "m_hi"]

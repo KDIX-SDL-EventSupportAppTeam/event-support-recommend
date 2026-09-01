@@ -260,11 +260,11 @@ def run_scenarios(overrides: dict | None = None) -> list[ScenarioResult]:
             req, settings=settings, rule_cache=RuleCache(), log_kind="recommend_demo"
         )
         rows = []
-        for s in sorted(resp.scores, key=lambda s: s.rank_in_event):
+        for s in sorted(resp.scores, key=lambda s: s.rank):
             raw = s.attributes.get("raw", {})
             rows.append(
                 dict(
-                    rank=s.rank_in_event, booth_id=s.booth_id, category=raw.get("category_id"),
+                    rank=s.rank, booth_id=s.booth_id, category=raw.get("category_id"),
                     visitor_count=raw.get("visitor_count"), interest_match=s.interest_match,
                     coverage_term=raw.get("coverage_term"), interest_term=raw.get("interest_term"),
                     score=s.score, assigned=s.was_assigned,

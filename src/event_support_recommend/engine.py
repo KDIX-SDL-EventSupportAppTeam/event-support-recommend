@@ -226,7 +226,7 @@ def run_recommendation(
         ScoreOut(
             booth_id=s.booth_id,
             score=round(s.score, 6),
-            rank_in_event=rank_by_id.get(s.booth_id, len(ranked)),
+            rank=rank_by_id.get(s.booth_id, len(ranked)),
             was_assigned=s.booth_id in assigned_ids,
             interest_match=s.interest_match.value,
             attributes=s.attributes,
@@ -235,7 +235,14 @@ def run_recommendation(
         for s in scored
     ]
     assigned_out = [
-        AssignedOut(booth_id=s.booth_id, attributes=s.attributes, reason=s.reason) for s in assigned
+        AssignedOut(
+            booth_id=s.booth_id,
+            score=round(s.score, 6),
+            rank=rank_by_id.get(s.booth_id, len(ranked)),
+            attributes=s.attributes,
+            reason=s.reason,
+        )
+        for s in assigned
     ]
 
     resp = RecommendResponse(
@@ -281,7 +288,7 @@ def _log_recommend(
             "assigned_booth_ids": [a.booth_id for a in resp.assigned],
             "scores": [
                 {"booth_id": s.booth_id, "score": s.score, "interest_match": s.interest_match,
-                 "was_assigned": s.was_assigned, "rank_in_event": s.rank_in_event}
+                 "was_assigned": s.was_assigned, "rank_in_event": s.rank}
                 for s in resp.scores
             ],
         },

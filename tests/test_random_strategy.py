@@ -180,7 +180,7 @@ def test_p6_same_interest_match_sorted_by_visitor_count_asc(run_random):
         for s in resp.scores:
             by_class.setdefault(s.interest_match, []).append(s)
         for group in by_class.values():
-            ordered = sorted(group, key=lambda s: s.rank_in_event)
+            ordered = sorted(group, key=lambda s: s.rank)
             vcs = [_vc(s) for s in ordered]
             assert vcs == sorted(vcs), (uid, vcs)
 
