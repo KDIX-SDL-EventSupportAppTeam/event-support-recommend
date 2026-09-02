@@ -1,0 +1,21 @@
+# 個人データ・秘匿情報はコミットしない（docs/rules/data-handling.md, docs/rules/git.md）
+.env
+.env.*
+!.env.example
+# 合成データ・実データ置き場（リポジトリ直下）。src/.../data/ パッケージは対象外
+/data/
+*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# デモレポートの出力先
+tools/out/

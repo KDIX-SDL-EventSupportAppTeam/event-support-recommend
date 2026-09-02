@@ -1,0 +1,70 @@
+# cloudbuild.yaml — event-support-recommend / Cloud Run (docs/specs/11-deployment.md §1, §3)
+#
+# サーバーの cloudbuild.yaml をそのままコピーしないこと (X-4)。
+# socket.io 起因の制約（--session-affinity / --max-instances=1 / --timeout=3600）は
+# 本サービスには不要。ステートレスで外部依存が一つも無い。
+substitutions:
+  _REGION: asia-northeast1
+  _SERVICE: event-support-recommend
+  _REPOSITORY: event-support
+  _IMAGE: event-support-recommend
+
+steps:
+  # 1. Docker イメージをビルド
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:latest
+      - .
+
+  # 2. Artifact Registry に push
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}
+
+  # 3. Cloud Run にデプロイ
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      # 未認証公開 (ADR 0006)。無防備なのは /recommend/cells と /health のみ。
+      # /ops/* は OPS_TOKEN、/demo は APP_ENV=production で無効化 (D-3, D-4)。
+      - --allow-unauthenticated
+      - --port=8080
+      # ステートレス。session-affinity は付けない（負荷が偏るだけ・§1）。
+      # 同時解放でキューイングさせない範囲で頭打ち (§1, §5)。
+      - --max-instances=4
+      # コールドスタートは min-instances=0 なら確実に起きる。当日のみ 1 へ上げる (§6)。
+      - --min-instances=0
+      # サーバー側は 1000ms で見切る。3600 秒保持する意味が無い (§1)。
+      - --timeout=10s
+      # 1リクエストが軽い。既定のまま。V-13 の実測で見直す (§1)。
+      - --concurrency=80
+      # ENGINE_VERSION にコミット SHA を入れる（研究データの突合に要る・X-6）。
+      # しきい値（PHASE_*/W_*/DRSA_*）は Cloud Run 側で渡さない。イメージ内の既定に任せる
+      # （当日 PHASE_DRSA_MIN を上書きしたことが一目で分かる状態を保つ・X-5）。
+      #
+      # 注意: --update-env-vars は既存の env を消さない。当日キルスイッチとして
+      # コンソールから PHASE_DRSA_MIN を上書きした場合、その値は次回以降のデプロイでも
+      # 残り続ける。**イベント終了後に手で消すこと。** 消し忘れると
+      # 「上書きした状態が既定」になり X-5 が破れる。
+      - --update-env-vars=^@^APP_ENV=production@ENGINE_VERSION=$COMMIT_SHA@STRATEGY=auto@LOG_LEVEL=info
+      # Secret 名はサーバーの Secret と衝突しないよう RECOMMEND_ を前置する (§3)。
+      - --set-secrets=OPS_TOKEN=RECOMMEND_OPS_TOKEN:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:latest
