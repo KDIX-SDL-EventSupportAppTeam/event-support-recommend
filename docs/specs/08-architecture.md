@@ -196,14 +196,19 @@ STRATEGY=auto                     # auto | coverage | random
                                   # random は下限ベースライン。APP_ENV=production では auto に落とす
 ```
 
-### データ取得（[ADR 0002](../decisions/adrs/0002-決定表のデータ入手経路.md) 決定後に確定）
+### データ取得（[ADR 0002](../decisions/adrs/0002-決定表のデータ入手経路.md) 採用済・案A′ 読み取り専用プロキシ）
+
+正本は [runtime-phase-switching/01-snapshot-source.md](runtime-phase-switching/01-snapshot-source.md) §2。
 
 ```
-# DATABASE_URL=
-# SAKURA_PROXY_URL=
-# SAKURA_PROXY_KEY=
-# SERVER_INTERNAL_URL=
+READONLY_PROXY_URL=          # 空なら取得しない（= COVERAGE 固定で動く）
+READONLY_PROXY_KEY=          # 読み取り専用の鍵。**書き込み可能な鍵を入れてはならない**
+READONLY_PROXY_TIMEOUT_SEC=20
+SNAPSHOT_EVENT_ID=           # 空なら直近リクエストの event_id を使う
 ```
+
+**本番（Cloud Run）でこれらが未設定だと、段3・段4 が結線済みでも `COVERAGE` から上がらない**
+（[11-deployment.md](11-deployment.md) D-6・[OPERATIONS.md](../OPERATIONS.md) A-1）。
 
 ---
 

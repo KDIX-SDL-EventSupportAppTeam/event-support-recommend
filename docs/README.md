@@ -5,6 +5,7 @@
 | 知りたいこと | 見る場所 |
 |---|---|
 | **このリポジトリの存在意義** | [PURPOSE.md](PURPOSE.md) ← **最初に読む** |
+| **当日、気を付けること** | [OPERATIONS.md](OPERATIONS.md) ← **当日サービスを預かる人はこれ** |
 | 何を受け取り何を返すのか | [specs/01-io-contract.md](specs/01-io-contract.md) |
 | 判断の記録 | [decisions/adrs/](decisions/adrs/) |
 | 守ること | [rules/](rules/README.md) |
@@ -34,6 +35,8 @@
 | — | [runtime-phase-switching](specs/runtime-phase-switching/README.md) | **当日のフェーズ切り替え（段3・段4 の結線）。確定** |
 | — | [parameter-tuning](specs/parameter-tuning/README.md) | パラメータ調整画面（`/demo`）の置き場所とデモログの分離。**確定**（[ADR 0008](decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md)） |
 
+| — | [OPERATIONS.md](OPERATIONS.md) | **当日の運用手引き。** 行動だけを1枚に。仕様ではなく手順 |
+
 **ダッシュボードの実装仕様は `event-support-analytics` にある**
 （`docs/specs/recommendation-evaluation/`）。本リポジトリは観測データの提供までを担う。
 
@@ -61,7 +64,7 @@
 |---|---|
 | 仕様書 | 一通り揃った（本ページの 01〜10） |
 | 実装 段1・段2 | **済**（`src/event_support_recommend/`、`tests/`） |
-| デプロイ | **実装済・未実施。** [11-deployment.md](specs/11-deployment.md) の D-1〜D-5 と `cloudbuild.yaml` は揃った。残るのは実際のデプロイと §7 の確認（V-1〜V-16） |
+| デプロイ | **初回デプロイ完了（2026-09-02）。** V-1〜V-8・V-14・V-15 合格（[11 §7.4](specs/11-deployment.md)）。**ただし `READONLY_PROXY_URL` 未設定のため現状のリビジョンは `COVERAGE` 固定**（[11 D-6](specs/11-deployment.md)・[OPERATIONS.md](OPERATIONS.md) A-1）。残る確認は V-5b・V-9〜V-13・V-16 |
 | 実装 段3・段4 | **未着手・着手可**（`data/` 結線・規則キャッシュ・`SIMILARITY` / `DRSA`）。仕様は [runtime-phase-switching](specs/runtime-phase-switching/README.md) |
 | [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md)（データ入手経路） | **採用（案A′）。** さくらプロキシの読み取り専用の口。設置一式は `event-support-analytics/deploy/sakura-readonly-proxy/` |
 | [06 の設問要求](specs/06-pre-survey-requirements.md) | サーバー側の承認待ち。**締切はアンケート配布日** |
@@ -80,6 +83,8 @@
 | [09 RD-1](specs/09-research-design.md) | **参加者内ランダム化を実施するか（実装着手前に決める）** |
 | [09 RD-2](specs/09-research-design.md) | 品質ゲートのしきい値（規則3本・γ 0.5・被覆率 0.5）。測定は [07 §8.1](specs/07-testing.md) の地図（`tools/build_prevalidation_map.py`）。決定は未 |
 | [09 RD-3](specs/09-research-design.md) | 去年ブースへのカテゴリ付与を行うか |
+| [11 D-7](specs/11-deployment.md) | **本番の `/demo` をブラウザから開く手段。** `X-Ops-Token` ヘッダを要求するがアドレス欄からは付けられない。クエリパラメータは URL とログに秘密が残るので採らない |
+| [11 D-8](specs/11-deployment.md) | パース失敗のログを `kind: "recommend"` のままにするか `recommend_error` へ分けるか（分析側の集計に影響する） |
 | [ADR 0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | **`RANDOM` に P-6 を課すか、対照群としての乱択性を採るか。** ADR は両方を要求しているが両立しない（P-6 を守るとクラス内が同点になり、順位が `visitor_count` 昇順で決まって COVERAGE と同じ反人気バイアスが残る）。現状は ADR の明文どおり P-6 を優先。事前検証で下限として使う前に決める |
 | [02-features F-1](specs/02-features.md) | `exploration_disposition` を有効化するか |
 | [02-features F-2](specs/02-features.md) | `top_interest_category` の設問が採用されるか |
