@@ -30,6 +30,11 @@
 | 実装 段3・段4（`data/`・規則キャッシュ・`SIMILARITY` / `DRSA` 結線） | **未着手**（[ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md) の決着待ち） |
 | データ入手経路（[ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md)） | **未決定。`SIMILARITY` / `DRSA` はこれが決まるまで実装しない** |
 | 事前アンケートの設問要求（[06](docs/specs/06-pre-survey-requirements.md)） | サーバー側の承認待ち。**締切はアンケート配布日** |
+| Cloud Run へのデプロイ | **初回デプロイ完了（2026-09-02）。** 確認 V-1〜V-8・V-14・V-15 合格（[11 §7.4](docs/specs/11-deployment.md)） |
+
+> **当日サービスを預かる人は [docs/OPERATIONS.md](docs/OPERATIONS.md) を読むこと。**
+> とくに **A-1: `READONLY_PROXY_URL` が未設定だと一日中 `COVERAGE` のまま動く**
+> （段3・段4 は結線済みだが、設定が無いとスナップショットを取りに行かない）。
 
 ```bash
 pip install -e ".[dev]" && pytest
@@ -51,8 +56,13 @@ uvicorn event_support_recommend.api.app:app --port 8077   # 起動して…
   動かすと、本物の Python エンジンで再計算する対話ページ
 - `POST /demo/run` … `{"overrides": {...}}` を投げると再計算結果を JSON で返す（キーは既知・範囲内に丸め）
 
-**`/demo` は `APP_ENV=production` では登録されない（404）。** 本番のサービスは未認証公開なので、
-URL を知る誰でもパラメータを試せる状態にしない（[11-deployment.md](docs/specs/11-deployment.md) D-3）。
+**本番の `/demo` は `/ops/*` と同じ `OPS_TOKEN` で保護される（トークン無しなら 401）。**
+`APP_ENV=production` かつ `OPS_TOKEN` 未設定なら、`/ops/*` ともども**登録されない（404）**
+（[ADR 0008](docs/decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md)・[11-deployment.md](docs/specs/11-deployment.md) D-3）。
+本番のサービスは未認証公開なので、URL を知る誰でもパラメータを試せる状態にしない。
+
+**ただしブラウザのアドレス欄から `X-Ops-Token` ヘッダは付けられない。**
+本番の `/demo` をどう開くかは**未決定**（[11 D-7](docs/specs/11-deployment.md)）。
 
 ### デプロイ（Cloud Run）
 
@@ -74,6 +84,12 @@ gcloud builds submit --config cloudbuild.yaml \
 - `APP_ENV=production` かつ `OPS_TOKEN` 未設定なら `/ops/*` も登録されない（無認証で素通しにしない・D-4）
 - `STRATEGY=auto|coverage|random` で戦略を選ぶ（[ADR 0007](docs/decisions/adrs/0007-戦略の選択を環境変数で行う.md)）。
   `random` は**対照群・下限ベースライン**で、本番では `auto` に落ちる
+- **`READONLY_PROXY_URL` を渡さないと `COVERAGE` 固定になる。**
+  段3・段4 は結線済みだが、設定が無いと `UnavailableRepository` が選ばれ決定表が育たない
+  （[11 D-6](docs/specs/11-deployment.md)）。**当日までに必ず設定する**
+
+**当日の運用は [docs/OPERATIONS.md](docs/OPERATIONS.md)。**
+デプロイ後の確認項目と初回デプロイの結果は [11-deployment.md](docs/specs/11-deployment.md) §7。
 
 ## API
 
@@ -126,6 +142,7 @@ POST /recommend/cells
 | 読むもの | 内容 |
 |---|---|
 | [docs/PURPOSE.md](docs/PURPOSE.md) | **存在意義。最初に読む** |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | **当日の運用手引き。気を付けること・触ってはいけないもの** |
 | [docs/README.md](docs/README.md) | ドキュメント索引と未決定事項の一覧 |
 | [docs/specs/](docs/specs/) | 仕様 |
 | [docs/decisions/adrs/](docs/decisions/adrs/) | 判断の記録 |

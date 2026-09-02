@@ -1,6 +1,6 @@
 ---
-状態: 確定（§9 の 1〜5 まで実装済・デプロイ未実施）
-最終更新: 2026-08-31
+状態: 確定（§9 の 1〜6 実施済。初回デプロイ完了 2026-09-02）
+最終更新: 2026-09-02
 ---
 
 # デプロイ — Cloud Run
@@ -16,7 +16,10 @@
 | 3. `STRATEGY` レジストリ（ADR 0007） | **済**（`strategies/registry.py`・`strategies/random.py`） |
 | 4. `cloudbuild.yaml`（§1・§3） | **済** |
 | 5. `.env.example` と [08-architecture.md](08-architecture.md) §4 | **済** |
-| 6. デプロイ → §7 の確認 → [07-testing.md](07-testing.md) §12 へ反映 | **未実施**（V-1〜V-16 はデプロイ後に人が行う） |
+| 6. デプロイ → §7 の確認 → [07-testing.md](07-testing.md) §12 へ反映 | **済**（2026-09-02 初回デプロイ。V-1〜V-8・V-14・V-15 合格。残りは §7.4） |
+
+**初回デプロイの記録は §7.4。読むべき順序としては、まず [OPERATIONS.md](../OPERATIONS.md) の A-1
+（`READONLY_PROXY_URL` 未設定のため現状のリビジョンは `COVERAGE` 固定である）を見ること。**
 
 ## 0. 前提の確認（ここを誤解しない）
 
@@ -233,6 +236,75 @@ tests docs tools
 
 ---
 
+### 7.4 初回デプロイの結果（2026-09-02）
+
+`develop` の `bc21695`（`ENGINE_VERSION` に同 SHA が入っていることを V-1 で確認）を Cloud Build から
+デプロイした。リビジョン `event-support-recommend-00002-rph`・`asia-northeast1`。
+
+| # | 結果 | 備考 |
+|---|---|---|
+| V-1 | **合格** | 200・`engine_version` が `bc21695…`（X-6 クリア） |
+| V-2 | **合格** | 503。スナップショット未取得のため正常 |
+| V-3 | **合格** | 401 |
+| V-4 | **合格** | 200・`phase.current` = `COVERAGE`・`decision_table_size` = `null`・しきい値は既定のまま（X-5 クリア） |
+| V-5 | **合格** | 401（ADR 0008 の想定どおり。当初仕様の 404 ではない） |
+| V-5b | 未実施 | ブラウザからヘッダを付けられないため確認方法の検討が要る（下記 D-7） |
+| V-6 | **合格** | 200・`scores` 5件（候補全件）・`assigned` 4件（`cell_count` 件） |
+| V-7 | **合格** | 空オブジェクト・不正 JSON・型違い・null・空文字の5パターンすべて 200。500 も 422 も出ず（O-6 クリア） |
+| V-8 | **合格** | 同一リクエスト2回が完全一致 |
+| V-9〜V-11 | 未実施 | サーバー側の作業。当日リハーサルで実施 |
+| V-12・V-13 | 未計測 | 当日リハーサルで実施 |
+| V-14 | **合格** | `jsonPayload` として完全に構造化。`severity` 追加の修正は**不要** |
+| V-15 | **合格** | 1リクエストあたり数 KB。256KB 上限に対して十分小さい |
+| V-16 | 未実施 | 当日リハーサルで実施 |
+
+**副次的に確認できたこと**: `visitor_count` が最多（40）の候補が `rank_in_event` 最下位になっており、
+**人気順への退化が本番環境でも起きていない**（[04-strategies.md](04-strategies.md) の全戦略共通の不変条件）。
+
+**デプロイ作業でつまずいた点**（次回のため）:
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| step 2 が `Secret … versions/latest was not found` で失敗 | Secret の**入れ物だけ**作られ、バージョン（中身）が無かった。`gcloud secrets create` を `--data-file` 無しで実行するとこうなる | `gcloud secrets versions add` で中身を入れる |
+| デプロイは成功するが URL が 403 | `Setting IAM Policy……warning`。`--allow-unauthenticated` の `allUsers` 付与だけが失敗していた | `gcloud run services add-iam-policy-binding … --member=allUsers --role=roles/run.invoker` を手で実行 |
+| `add-iam-policy-binding` が条件の選択を対話で聞いてくる | 既存ポリシーに条件付きバインディングがある | `--condition=None` を付ける |
+
+### 7.5 この確認で新たに分かった、直すべきもの
+
+#### D-6 `READONLY_PROXY_URL` が Cloud Run に渡されていない ★最重要
+
+**現状のリビジョンは一日中 `COVERAGE` のまま動く。** 段3・段4 は `develop` で結線済みだが、
+`cloudbuild.yaml` が `READONLY_PROXY_URL` / `READONLY_PROXY_KEY` を渡していないため
+`build_repository()` が `UnavailableRepository` を返し、スナップショットの定期取得が起動しない。
+
+- 決定表が育たない → `decision_table_size` が永久に `null` → 判定は常に `COVERAGE`
+- **実装は正しいのに設定だけで研究が1本に縮む。** 最も気づきにくい壊れ方である
+- 鍵は Secret Manager 経由にする（`RECOMMEND_READONLY_PROXY_KEY`）。§3 の命名規則に従う
+- **`READONLY_PROXY_KEY` に書き込み可能な鍵を入れてはならない**（[settings.py](../../src/event_support_recommend/settings.py) の注記）
+
+プロキシの設置一式は `event-support-analytics/deploy/sakura-readonly-proxy/` にある
+（[ADR 0002](../decisions/adrs/0002-決定表のデータ入手経路.md)）。**URL が確定し次第 `cloudbuild.yaml` に追加する。**
+
+#### D-7 `/demo` をブラウザから開く手段が無い
+
+`/demo` は `X-Ops-Token` ヘッダか `Authorization: Bearer` を要求する（[routes_ops.py](../../src/event_support_recommend/api/routes_ops.py) `require_ops`）。
+**ブラウザのアドレス欄からは任意ヘッダを付けられないため、V-5b を人が実施できない。**
+
+ADR 0008 は `/demo` を推薦側に残すと決めたが、本番での**開き方**は決めていない。
+クエリパラメータでのトークン受け取りは URL とログに秘密が残るので採らない。
+**未決定として扱い、[docs/README.md](../README.md) の一覧に載せる。**
+
+#### D-8 パース失敗のログが成功時と同じ `kind: "recommend"` で出る
+
+リクエストのパースに失敗した行が `{"kind": "recommend", "error": …, "ts": …}` として出る。
+`scores` を持たないため、分析側が `kind == "recommend"` で拾うと**スコアの無い行が混ざる**。
+
+[ADR 0008](../decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md) が `recommend_demo` を分離したのと同じ理屈で
+`recommend_error` へ分けるのが素直に見えるが、**[10-observability.md](10-observability.md) の意図を確認してから決める。**
+分析側の集計に影響するため、勝手に変えない。
+
+---
+
 ## 8. 起きてはいけないこと
 
 | # | 禁止 | 破ると |
@@ -244,6 +316,8 @@ tests docs tools
 | X-5 | しきい値を Cloud Run の env で上書きした状態を既定にする | **当日の変更点が見分けられなくなる**（§3） |
 | X-6 | `ENGINE_VERSION` を空のままデプロイする | どのコードが出した推薦か復元できない。研究データの価値が落ちる |
 | X-7 | デプロイを機に `main` へ直接 push する | [rules/git.md](../rules/git.md) |
+| X-8 | `READONLY_PROXY_URL` 未設定のまま当日を迎える | **`SIMILARITY` / `DRSA` が一度も動かず、研究の主張が `COVERAGE` 1本に縮む**（D-6） |
+| X-9 | `READONLY_PROXY_KEY` に書き込み可能な鍵を入れる | 読むだけのサービスが書けてしまう。ADR 0002 の前提が崩れる |
 
 ---
 
