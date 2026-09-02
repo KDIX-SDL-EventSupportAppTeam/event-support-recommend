@@ -46,6 +46,34 @@
 | Cloud Run サービス名 | `event-support-recommend` | — |
 | イメージ名 | `event-support-recommend` | — |
 | ビルド | Cloud Build（`cloudbuild.yaml`） | サーバーと同じ |
+| デプロイの起動 | **`main` への push（CD トリガー）** | サーバー・フロントと同じ（下記 §1.1） |
+
+### 1.1 CD — `main` への push で自動デプロイする（2026-09-02 構成）
+
+`event-support-server` / `event-support-frontend` と**同じ型に揃えた**。
+
+| 項目 | 値 |
+|---|---|
+| トリガー名 | `deploy-event-support-recommend` |
+| リージョン | `asia-northeast1`（`global` には作らない。既存2件もこちら） |
+| GitHub 接続 | 第2世代。リポジトリごとに1接続（`event-support-recommend`） |
+| 発火条件 | `^main$` への push |
+| 設定ファイル | `cloudbuild.yaml` |
+| 実行サービスアカウント | `cloud-build-deployer@event-support-app.iam.gserviceaccount.com` |
+
+**トリガー経由なら `$COMMIT_SHA` が自動で入る。** 手動 `gcloud builds submit` で
+`--substitutions` を忘れて `ENGINE_VERSION` が空になる事故（X-6）が構造的に消える。
+**これが CD にする一番の実利であり、手動デプロイへ戻してはいけない理由である。**
+
+構築時につまずいた点:
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| `connections create` が `could not assert Secret Manager permissions` | Cloud Build の P4SA（`service-<番号>@gcp-sa-cloudbuild…`）に Secret Manager 権限が無い。接続時に GitHub トークンを Secret として保存するため要る | P4SA に `roles/secretmanager.admin` を付与 |
+| `repositories create` が `installation_state COMPLETE` を要求して失敗 | 接続が `PENDING_USER_OAUTH`。**GitHub 側の認可はブラウザ操作が必須** | `connections describe … --format="value(installationState.actionUri)"` の URL を開いて承認し、**対象リポジトリを App のインストール先に含める** |
+
+**当日は `main` を凍結する。** マージがそのまま本番差し替えになるため
+（[OPERATIONS.md](../OPERATIONS.md) §1.1・[ADR 0009](../decisions/adrs/0009-当日の切り替えは既定値のまま走らせ調整は事後に行う.md)）。
 
 ### サーバーと**揃えない**もの
 
@@ -318,6 +346,7 @@ ADR 0008 は `/demo` を推薦側に残すと決めたが、本番での**開き
 | X-7 | デプロイを機に `main` へ直接 push する | [rules/git.md](../rules/git.md) |
 | X-8 | `READONLY_PROXY_URL` 未設定のまま当日を迎える | **`SIMILARITY` / `DRSA` が一度も動かず、研究の主張が `COVERAGE` 1本に縮む**（D-6） |
 | X-9 | `READONLY_PROXY_KEY` に書き込み可能な鍵を入れる | 読むだけのサービスが書けてしまう。ADR 0002 の前提が崩れる |
+| X-10 | イベント当日に `main` へマージする | **CD が発火して本番が差し替わる**（§1.1・[OPERATIONS.md](../OPERATIONS.md) O-7） |
 
 ---
 
