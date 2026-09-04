@@ -56,18 +56,19 @@
 
 ## 現在の状態
 
-**段1（`COVERAGE` ＋ `features/`）と段2（`drsa/` コア）を実装済み。
-段3・段4 は [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md) の決着により着手可能になった**
-（仕様: [runtime-phase-switching](specs/runtime-phase-switching/README.md)）。
+**段1〜段4 をすべて実装し、Cloud Run へデプロイ済み。**
+残るリスクは実装ではなく**設定**（A-1）である。
 
 | 項目 | 状態 |
 |---|---|
-| 仕様書 | 一通り揃った（本ページの 01〜10） |
-| 実装 段1・段2 | **済**（`src/event_support_recommend/`、`tests/`） |
-| デプロイ | **初回デプロイ完了（2026-09-02）。** V-1〜V-8・V-14・V-15 合格（[11 §7.4](specs/11-deployment.md)）。**ただし `READONLY_PROXY_URL` 未設定のため現状のリビジョンは `COVERAGE` 固定**（[11 D-6](specs/11-deployment.md)・[OPERATIONS.md](OPERATIONS.md) A-1）。残る確認は V-5b・V-9〜V-13・V-16 |
-| 実装 段3・段4 | **未着手・着手可**（`data/` 結線・規則キャッシュ・`SIMILARITY` / `DRSA`）。仕様は [runtime-phase-switching](specs/runtime-phase-switching/README.md) |
+| 仕様書 | 一通り揃った（本ページの 01〜11） |
+| 実装 段1・段2 | **済**（`src/event_support_recommend/features/`・`drsa/`） |
+| 実装 段3・段4 | **済**（`data/`・`cache/`・`strategies/`。`tests/` は21本）。仕様は [runtime-phase-switching](specs/runtime-phase-switching/README.md) |
+| デプロイ | **初回デプロイ完了（2026-09-02）。** V-1〜V-8・V-14・V-15 合格（[11 §7.4](specs/11-deployment.md)）。残る確認は V-5b・V-9〜V-13・V-16 |
+| `READONLY_PROXY_URL` / `READONLY_PROXY_KEY` | **未設定。先生からの鍵の受領待ち。** 設定されるまで現状のリビジョンは `COVERAGE` 固定（[11 D-6](specs/11-deployment.md)・[OPERATIONS.md](OPERATIONS.md) A-1） |
 | [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md)（データ入手経路） | **採用（案A′）。** さくらプロキシの読み取り専用の口。設置一式は `event-support-analytics/deploy/sakura-readonly-proxy/` |
 | [06 の設問要求](specs/06-pre-survey-requirements.md) | サーバー側の承認待ち。**締切はアンケート配布日** |
+| [10-testing](specs/runtime-phase-switching/10-testing.md) の T-1〜T-48 | **消化状況が未確定。** テストは存在するが対応表が無い（[#29](https://github.com/KDIX-SDL-EventSupportAppTeam/event-support-recommend/issues/29)） |
 
 ## 未決定事項の一覧
 
@@ -79,7 +80,6 @@
 
 | 出典 | 項目 |
 |---|---|
-| [ADR 0002](decisions/adrs/0002-決定表のデータ入手経路.md) | 決定表のデータをどこから取るか |
 | [09 RD-1](specs/09-research-design.md) | **参加者内ランダム化を実施するか（実装着手前に決める）** |
 | [09 RD-2](specs/09-research-design.md) | 品質ゲートのしきい値（規則3本・γ 0.5・被覆率 0.5）。測定は [07 §8.1](specs/07-testing.md) の地図（`tools/build_prevalidation_map.py`）。決定は未 |
 | [09 RD-3](specs/09-research-design.md) | 去年ブースへのカテゴリ付与を行うか |
