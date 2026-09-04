@@ -27,6 +27,7 @@
 | # | やること | 終わっていないと |
 |---|---|---|
 | **A-1** | **`READONLY_PROXY_URL` / `READONLY_PROXY_KEY` を Cloud Run に設定する** | **一日中 `COVERAGE` のまま。`SIMILARITY` / `DRSA` は一度も動かない**（下記 §2） |
+| **A-0** | **前日までに `main` を凍結する**（下記 §1.1） | **当日 `main` にマージした瞬間に本番が差し替わる** |
 | A-2 | サーバー側の `RECOMMENDER_URL` を Cloud Run の URL に設定する | 推薦が一度も呼ばれない |
 | A-3 | イベント開始1時間前に `--min-instances=1` へ上げる | コールドスタートで数秒かかり、サーバー側のタイムアウト（1000ms）に届かない |
 | A-4 | [11-deployment.md](specs/11-deployment.md) §7 の V-9〜V-13 を通す | 結合と性能が未検証のまま本番に入る |
@@ -51,6 +52,23 @@ GET /ops/state   （X-Ops-Token ヘッダが要る）
 ```
 
 `snapshot.ok` が `false` のままなら A-1 が未実施か、プロキシが応答していない。
+
+### 1.1 当日は `main` を凍結する
+
+**`main` への push は Cloud Build トリガー `deploy-event-support-recommend` を発火させ、
+そのまま Cloud Run のリビジョンが差し替わる**（`asia-northeast1`・`cloudbuild.yaml`）。
+
+つまり当日、**誰かが良かれと思って PR をマージしただけで本番が入れ替わる。**
+[ADR 0009](decisions/adrs/0009-当日の切り替えは既定値のまま走らせ調整は事後に行う.md) の
+「当日はリビジョンを差し替えない」は、CD がある以上**運用で守るしかない**。
+
+| いつ | やること |
+|---|---|
+| 前日まで | チームに **「当日は `main` にマージしない」** を周知する。GitHub の branch protection で `main` を一時的にロックできるならそれが確実 |
+| 当日 | `main` へのマージを一切行わない。**障害対応で差し替えた場合は時刻を記録する**（§4） |
+| 終了後 | 凍結を解除する |
+
+**`develop` への push・PR は自由でよい。** 発火するのは `main` だけである。
 
 ---
 
@@ -118,6 +136,7 @@ GET /ops/state   （X-Ops-Token ヘッダが要る）
 | O-4 | サービス URL を公開資料・スライド・リポジトリに載せる | 未認証公開なので、偽リクエストで研究データが汚れる（[11 §5](specs/11-deployment.md)） |
 | O-5 | `OPS_TOKEN` をチャット・コミットに貼る | `/ops/*` と `/demo` が誰でも触れる |
 | O-6 | イベント後に `--min-instances=1` と当日の env 上書きを戻し忘れる | 課金が続く。上書きが「既定」になり当日の変更点が見分けられなくなる（[11 X-5](specs/11-deployment.md)） |
+| O-7 | 当日 `main` へマージする（障害対応を除く） | **CD が発火して本番が差し替わる。** `engine_version` が変わり、研究データの前後が繋がらなくなる（§1.1） |
 
 ---
 
