@@ -355,3 +355,5 @@ R-1 のテスト閾値（サーバー側タイムアウト 1000ms）は
 [11-deployment.md](11-deployment.md) の **D-6（`READONLY_PROXY_URL` が未設定）**である。
 これが直っていないと、フェーズ切り替えを含むリハーサル項目が**すべて意味を失う**
 （`COVERAGE` 以外が一度も動かないため）。
+
+段3・段4 の項目の担保状況は [runtime-phase-switching/10-testing.md](runtime-phase-switching/10-testing.md) §9。
