@@ -36,6 +36,7 @@
 | — | [parameter-tuning](specs/parameter-tuning/README.md) | パラメータ調整画面（`/demo`）の置き場所とデモログの分離。**確定**（[ADR 0008](decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md)） |
 
 | — | [OPERATIONS.md](OPERATIONS.md) | **当日の運用手引き。** 行動だけを1枚に。仕様ではなく手順 |
+| — | [docs/tests/runs/](tests/runs/) | 当日・リハーサルの実測記録 |
 
 **ダッシュボードの実装仕様は `event-support-analytics` にある**
 （`docs/specs/recommendation-evaluation/`）。本リポジトリは観測データの提供までを担う。
