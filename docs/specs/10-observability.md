@@ -53,13 +53,16 @@
     "count_certain_up": 4,          // 「>= HIGH」を結論する確実規則
     "count_certain_down": 3,        // 「<= LOW」
     "gamma": 0.62,                  // 近似の質
-    "candidate_coverage": 0.71,     // 直近リクエストで規則が当たった候補の割合
+    "candidate_coverage": 0.71,     // 直近の本番推薦で規則が当たった候補の割合。
+                                    // 推薦を1件も処理していなければ null（0 ではない）
     "consistency_level": 0.8
   },
   "phase": {
-    "current": "DRSA",
-    "quality_gate_passed": true,
+    "current": "DRSA",             // 実際に返したフェーズ。推薦前は件数だけの判定
+    "judged": "DRSA",              // 直近の本番推薦が下した判定。推薦前は null
+    "quality_gate_passed": true,   // 推薦前は null
     "gate_detail": { "size": true, "rules": true, "gamma": true, "coverage": true },
+                                    // 推薦前は null（4項目を false で埋めない）
     "next_threshold": null
   },
   "experiment": {
@@ -73,6 +76,14 @@
 
 **`gamma` と `candidate_coverage` は推薦エンジンしか知らない。**
 「DRSA と判定されているのに、実は規則が当たっていない」を検出する唯一の手段である。
+
+**品質ゲートの正本は推薦エンジン1つ (issue #34)。** `/ops/state` は
+`evaluate_quality_gate` を自分で呼ばない。直近の本番推薦（`kind="recommend"`）が
+評価した `GateResult` と `candidate_coverage` をそのまま返す。まだ1件も推薦を
+処理していなければ、`phase.judged` / `phase.quality_gate_passed` / `phase.gate_detail` /
+`rules.candidate_coverage` は **`null`** になる。**「計算していない」と「0」は別物**であり、
+0 や false で埋めない。consumer（frontend / analytics）は `null` を「未提供」として
+描き分けること。
 
 ---
 

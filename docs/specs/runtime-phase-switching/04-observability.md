@@ -1,6 +1,6 @@
 ---
 状態: 確定
-最終更新: 2026-09-01
+最終更新: 2026-09-10
 ---
 
 # 観測と連携
@@ -17,9 +17,15 @@
 | `snapshot.decision_table_size` | **評価済み件数。フェーズが上がるまでの距離** |
 | `rules.count_certain_up` / `count_certain_down` | 抽出できた確実規則の本数 |
 | `rules.gamma` | 近似の質 |
-| `phase.current` | **実際に使っている戦略**（`actual_phase`） |
-| `phase.quality_gate_passed` / `gate_detail` | DRSA へ上がれない理由の内訳（4項目のどれが欠けているか） |
+| `phase.current` | **実際に使っている戦略**（`actual_phase`）。推薦前は件数だけの判定 |
+| `phase.judged` | 直近の本番推薦が下した判定。**推薦前は `null`** |
+| `phase.quality_gate_passed` / `gate_detail` | DRSA へ上がれない理由の内訳（4項目のどれが欠けているか）。**推薦前は `null`** |
+| `rules.candidate_coverage` | 直近の本番推薦で規則が当たった候補の割合。**推薦前は `null`（0 ではない）** |
 | `config.phase_similarity_min` / `phase_drsa_min` | 判定に使っているしきい値 |
+
+`/ops/state` は品質ゲートを自分で評価しない。直近の本番推薦（`kind="recommend"`）が
+`app.state.last_gate` に控えた `GateResult` と `candidate_coverage` をそのまま返す
+（正本は推薦エンジン1つ。issue #34）。未計算の項目を 0 や false で埋めない。
 
 **`notes` の `"SIMILARITY/DRSA not wired: ADR 0002 undecided"` を削除する。**
 実装後もこれが残っていると、当日の判断を誤らせる。

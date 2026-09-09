@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from ..cache import RuleCache, SnapshotCache
 from ..data import build_repository
 from ..engine import run_recommendation
-from ..phases import decide_phase, evaluate_quality_gate
+from ..phases import decide_phase
 from ..settings import Settings, get_settings
 from ..snapshot_build import refresh_caches
 from .schemas import RecommendRequest
@@ -92,12 +92,25 @@ async def ops_state(request: Request) -> dict:
     rules_state = rc.snapshot_state()
     snap_state = sc.snapshot_state()
     size = rc.decision_table_size
-    gate = evaluate_quality_gate(
-        size, rules_state["count_certain_up"], rc.gamma, 0.0, s
-    )
-    judged = decide_phase(size, s, gate=gate)
-    # 「実際に返した phase」を優先して返す (T-44)。まだ1件も推薦していなければ判定値。
-    current = getattr(request.app.state, "last_phase", None) or judged.value
+    # 品質ゲートの正本は推薦エンジン1つ (issue #34)。ここでは評価せず、直近の本番推薦が
+    # 控えた結果 (app.state.last_gate) をそのまま返す。まだ1件も推薦していなければ、
+    # 計算していない項目は null にする（0 や false で埋めない）。
+    last_gate = getattr(request.app.state, "last_gate", None)
+    if last_gate is not None:
+        judged_value = last_gate.judged_phase.value
+        gate_passed = last_gate.gate.passed
+        gate_detail = last_gate.gate.detail.as_dict()
+        candidate_coverage = last_gate.candidate_coverage
+        split_active = s.experiment_split_enabled and last_gate.gate.passed
+    else:
+        judged_value = None
+        gate_passed = None
+        gate_detail = None
+        candidate_coverage = None
+        split_active = False
+    # 「実際に返した phase」を優先して返す (T-44)。まだ1件も推薦していなければ、
+    # 件数だけで決まる部分（COVERAGE / SIMILARITY）に留める。DRSA は名乗らない。
+    current = getattr(request.app.state, "last_phase", None) or decide_phase(size, s).value
     return {
         "engine_version": s.resolved_engine_version,
         "snapshot": {
@@ -110,17 +123,17 @@ async def ops_state(request: Request) -> dict:
             "count_certain_up": rules_state["count_certain_up"],
             "count_certain_down": rules_state["count_certain_down"],
             "gamma": rules_state["gamma"],
-            "candidate_coverage": 0.0,
+            "candidate_coverage": candidate_coverage,
             "consistency_level": rules_state["consistency_level"] or s.drsa_consistency,
         },
         "phase": {
             "current": current,
-            "judged": judged.value,
-            "quality_gate_passed": gate.passed,
-            "gate_detail": gate.detail.as_dict(),
+            "judged": judged_value,
+            "quality_gate_passed": gate_passed,
+            "gate_detail": gate_detail,
         },
         "experiment": {
-            "split_active": s.experiment_split_enabled and gate.passed,
+            "split_active": split_active,
             "split_started_at": None,
         },
         "config": {
