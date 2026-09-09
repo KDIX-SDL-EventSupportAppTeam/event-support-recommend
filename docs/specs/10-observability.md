@@ -60,7 +60,9 @@
   "phase": {
     "current": "DRSA",             // 実際に返したフェーズ。推薦前は件数だけの判定
     "judged": "DRSA",              // 直近の本番推薦が下した判定。推薦前は null
-    "judged_at": "2026-10-16T04:39:12Z",  // ゲートを評価した時刻 (UTC)。推薦前は null
+    "judged_at": "2026-10-16T04:39:12.123456+00:00",  // ゲートを評価した時刻。
+                                    // datetime.isoformat() のまま（マイクロ秒つき・
+                                    // +00:00 オフセット。"Z" 表記ではない）。推薦前は null
     "quality_gate_passed": true,   // 推薦前は null
     "gate_detail": { "size": true, "rules": true, "gamma": true, "coverage": true },
                                     // 推薦前は null（4項目を false で埋めない）
@@ -93,7 +95,9 @@
 `phase.gate_detail` は**過去の推薦時点**の評価である。両者はズレうる（推薦のあとに規則が
 再生成されれば `rules.*` だけが進む）。
 
-- `phase.judged_at` … ゲートを評価した時刻 (UTC, ISO8601)
+- `phase.judged_at` … ゲートを評価した時刻。`datetime.isoformat()` の生の文字列
+  （マイクロ秒つき・`+00:00` オフセット。`"Z"` 表記ではない。例
+  `"2026-10-16T04:39:12.123456+00:00"`）
 - `phase.gate_stats.size` / `.gamma` / `.rules` … その評価に使った統計
 
 **突き合わせは consumer が行う。** `/ops/state` は `gate_stats` と `rules.*` を並べて返すだけで、
