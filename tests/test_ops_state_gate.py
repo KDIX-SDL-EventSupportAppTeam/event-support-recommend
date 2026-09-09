@@ -5,9 +5,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pytest
+from fastapi.testclient import TestClient
 
 from event_support_recommend import engine as engine_mod
+from event_support_recommend.api.app import create_app
 from event_support_recommend.api.schemas import RecommendRequest
 from event_support_recommend.cache import RuleCache, SnapshotCache
 from event_support_recommend.drsa import DecisionTable, generate_rules
@@ -154,3 +158,74 @@ def test_demo_kind_does_not_write_last_gate():
         settings=s, rule_cache=RuleCache(), app_state=st, log_kind="recommend_replay",
     )
     assert not hasattr(st, "last_gate")
+
+
+# --------------------------------------------------------------------------- #
+# 続き #1: 鮮度の開示 — judged_at
+# --------------------------------------------------------------------------- #
+def test_judged_at_null_before_and_iso_utc_after(client):
+    assert client.get("/ops/state").json()["phase"]["judged_at"] is None
+
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    client.post("/recommend/cells", json=_payload())
+    body = client.get("/ops/state").json()
+
+    judged_at = body["phase"]["judged_at"]
+    assert isinstance(judged_at, str)
+    parsed = datetime.fromisoformat(judged_at)
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() == timedelta(0)
+    assert body["phase"]["judged_at"] == client.app.state.last_gate.evaluated_at.isoformat()
+
+
+# --------------------------------------------------------------------------- #
+# 続き #1: gate_stats は推薦時点のまま、rules.* だけがキャッシュ更新で進む
+# --------------------------------------------------------------------------- #
+def test_gate_stats_frozen_while_rules_move(client):
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    client.post("/recommend/cells", json=_payload())
+
+    before = client.get("/ops/state").json()
+    assert before["phase"]["gate_stats"] == {"size": 40, "gamma": 1.0, "rules": before["rules"]["count_certain_up"]}
+
+    # 推薦せずにキャッシュだけ別の size/gamma で入れ替える
+    client.app.state.rule_cache.put(_rules(), decision_table_size=99, gamma=0.5)
+    after = client.get("/ops/state").json()
+
+    # gate 側は推薦時点で固定
+    assert after["phase"]["gate_stats"]["size"] == 40
+    assert after["phase"]["gate_stats"]["gamma"] == 1.0
+    assert after["phase"]["judged_at"] == before["phase"]["judged_at"]
+    assert after["phase"]["gate_detail"] == before["phase"]["gate_detail"]
+    # rules.* は新しいキャッシュを映す → ズレが観測できる
+    assert after["rules"]["gamma"] == 0.5
+    assert after["snapshot"]["decision_table_size"] == 99
+
+
+# --------------------------------------------------------------------------- #
+# 続き #2: experiment.split_active の null セマンティクス
+# --------------------------------------------------------------------------- #
+def test_split_active_null_before_recommendation(client):
+    assert client.get("/ops/state").json()["experiment"]["split_active"] is None
+
+
+def test_split_active_false_when_gate_fails(client):
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    client.post("/recommend/cells", json=_payload())  # size 40 → SIMILARITY, ゲート不通過
+    assert client.get("/ops/state").json()["experiment"]["split_active"] is False
+
+
+def test_split_active_true_when_enabled_and_gate_passes():
+    s = Settings(_env_file=None, enabled_attributes=list(NAMES),
+                 drsa_min_rules=1, experiment_split_enabled=True)
+    with TestClient(create_app(s)) as c:
+        c.app.state.rule_cache.put(_rules(), decision_table_size=90, gamma=1.0)
+        sc = c.app.state.snapshot_cache
+        axes = {"interest_categories": ["hi"], "age_range": "20s", "occupation": "x"}
+        sc.put(decision_table_size=90,
+               surveys={"u1": dict(axes), **{f"n{i}": dict(axes) for i in range(5)}},
+               ratings_by_user={f"n{i}": {"b1": 0.8, "b2": 0.3} for i in range(5)},
+               booth_category={}, global_mean=0.5)
+        resp = c.post("/recommend/cells", json=_payload()).json()
+        assert resp["phase"] == "DRSA"
+        assert c.get("/ops/state").json()["experiment"]["split_active"] is True

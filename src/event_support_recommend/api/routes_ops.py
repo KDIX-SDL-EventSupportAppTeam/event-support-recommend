@@ -101,13 +101,23 @@ async def ops_state(request: Request) -> dict:
         gate_passed = last_gate.gate.passed
         gate_detail = last_gate.gate.detail.as_dict()
         candidate_coverage = last_gate.candidate_coverage
-        split_active = s.experiment_split_enabled and last_gate.gate.passed
+        split_active = bool(s.experiment_split_enabled and last_gate.gate.passed)
+        judged_at = last_gate.evaluated_at.isoformat()
+        # ゲートを評価した時点の統計。応答時点の rules.* とズレていれば読み手が気づける
+        gate_stats = {
+            "size": last_gate.size,
+            "gamma": last_gate.gamma,
+            "rules": last_gate.certain_rules_count,
+        }
     else:
         judged_value = None
         gate_passed = None
         gate_detail = None
         candidate_coverage = None
-        split_active = False
+        # 「ゲート不通過」と「未判定」を同じ値にしない。推薦前は null
+        split_active = None
+        judged_at = None
+        gate_stats = None
     # 「実際に返した phase」を優先して返す (T-44)。まだ1件も推薦していなければ、
     # 件数だけで決まる部分（COVERAGE / SIMILARITY）に留める。DRSA は名乗らない。
     current = getattr(request.app.state, "last_phase", None) or decide_phase(size, s).value
@@ -129,8 +139,10 @@ async def ops_state(request: Request) -> dict:
         "phase": {
             "current": current,
             "judged": judged_value,
+            "judged_at": judged_at,
             "quality_gate_passed": gate_passed,
             "gate_detail": gate_detail,
+            "gate_stats": gate_stats,
         },
         "experiment": {
             "split_active": split_active,

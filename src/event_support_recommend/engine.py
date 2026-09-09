@@ -48,11 +48,20 @@ class LastGate:
     `/ops/state` はこれを読むだけにして、`evaluate_quality_gate` を自分で呼ばない。
     推薦を1件も処理していなければ `app.state` にこの属性は存在せず、`/ops/state` は
     ゲート4項目と `candidate_coverage` を `null` で返す（0 を捏造しない）。
+
+    `evaluated_at` と `size` / `gamma` / `certain_rules_count` は**評価した時点**の値。
+    `/ops/state` の `rules.*` は応答時点のキャッシュを映すので、両者を突き合わせれば
+    「ゲートは過去の推薦時点、規則は今」というズレを読み手が検出できる。突き合わせは
+    consumer に任せ、ここで再評価はしない（正本は推薦エンジン1つ）。
     """
 
     gate: GateResult
     candidate_coverage: float
     judged_phase: Phase
+    evaluated_at: datetime
+    size: int | None
+    gamma: float
+    certain_rules_count: int
 
 
 def _runtime_config(s: Settings) -> RuntimeConfig:
@@ -233,6 +242,10 @@ def run_recommendation(
             gate=gate,
             candidate_coverage=candidate_coverage,
             judged_phase=judged_phase,
+            evaluated_at=now,
+            size=decision_table_size,
+            gamma=gamma,
+            certain_rules_count=certain_up,
         )
 
     # --- 退避ラダー: judged_phase と STRATEGY から実際の戦略を選び、

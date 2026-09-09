@@ -60,13 +60,15 @@
   "phase": {
     "current": "DRSA",             // 実際に返したフェーズ。推薦前は件数だけの判定
     "judged": "DRSA",              // 直近の本番推薦が下した判定。推薦前は null
+    "judged_at": "2026-10-16T04:39:12Z",  // ゲートを評価した時刻 (UTC)。推薦前は null
     "quality_gate_passed": true,   // 推薦前は null
     "gate_detail": { "size": true, "rules": true, "gamma": true, "coverage": true },
                                     // 推薦前は null（4項目を false で埋めない）
+    "gate_stats": { "size": 214, "gamma": 0.62, "rules": 4 },  // 評価時点の統計。推薦前は null
     "next_threshold": null
   },
   "experiment": {
-    "split_active": true,           // 参加者内ランダム化が発動しているか
+    "split_active": true,           // 参加者内ランダム化が発動しているか。推薦前は null
     "split_started_at": "2026-10-16T04:40:00Z"
   },
   "latency_ms": { "p50": 38, "p95": 112, "budget": 600 },
@@ -84,6 +86,35 @@
 `rules.candidate_coverage` は **`null`** になる。**「計算していない」と「0」は別物**であり、
 0 や false で埋めない。consumer（frontend / analytics）は `null` を「未提供」として
 描き分けること。
+
+### 鮮度のズレを読み手が検出できるようにする
+
+`rules.*`（`gamma` / `count_certain_up` / `decision_table_size`）は**応答時点のキャッシュ**を映す。
+`phase.gate_detail` は**過去の推薦時点**の評価である。両者はズレうる（推薦のあとに規則が
+再生成されれば `rules.*` だけが進む）。
+
+- `phase.judged_at` … ゲートを評価した時刻 (UTC, ISO8601)
+- `phase.gate_stats.size` / `.gamma` / `.rules` … その評価に使った統計
+
+**突き合わせは consumer が行う。** `/ops/state` は `gate_stats` と `rules.*` を並べて返すだけで、
+再評価はしない（正本は推薦エンジン1つ）。`gate_stats` と `rules.*` が食い違っていたら、
+`gate_detail` は古い可能性がある、と読む。
+
+### `experiment.split_active` の null
+
+- `true` … ゲート通過かつ `EXPERIMENT_SPLIT_ENABLED=true`
+- `false` … 推薦は処理したが上の条件を満たさない（**ゲート不通過など**）
+- `null` … 推薦を1件も処理していない（**未判定**）
+
+「ゲート不通過」と「未判定」を同じ `false` にしない。
+
+### 複数インスタンスでの読み方
+
+`app.state.last_gate` / `app.state.last_phase` は**プロセス内状態**である。Cloud Run が
+複数インスタンスで動いていると、`/ops/state` は**応答したインスタンスの観測しか語らない**。
+`phase.current` / `judged` / `judged_at` / `gate_*` はインスタンスごとに違いうる。
+当日は `--min-instances=1` 前提なので実害は小さいが、スケールアウト中に叩くと
+「まだ推薦していない」インスタンスが `null` を返すことがある。
 
 ---
 
