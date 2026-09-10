@@ -7,6 +7,7 @@ docs/rules/coding.md)。phase には「実際に使えた戦略」を返す。
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from . import __version__, logging as jsonl
@@ -31,13 +32,36 @@ from .models import (
     VisitSource,
     InterestMatch,
 )
-from .phases import decide_phase, evaluate_quality_gate
+from .phases import GateResult, decide_phase, evaluate_quality_gate
 from .settings import Settings
 from .strategies import StrategyUnavailable
 from .strategies.common import compute_candidate_features, vector_from_features
 from .strategies.registry import build_ladder, phase_of
 
 _EXPLORATION_MAP = {"low": 1, "mid": 2, "high": 3, "1": 1, "2": 2, "3": 3}
+
+
+@dataclass(frozen=True)
+class LastGate:
+    """直近の本番推薦で実際に評価した品質ゲート (issue #34)。
+
+    `/ops/state` はこれを読むだけにして、`evaluate_quality_gate` を自分で呼ばない。
+    推薦を1件も処理していなければ `app.state` にこの属性は存在せず、`/ops/state` は
+    ゲート4項目と `candidate_coverage` を `null` で返す（0 を捏造しない）。
+
+    `evaluated_at` と `size` / `gamma` / `certain_rules_count` は**評価した時点**の値。
+    `/ops/state` の `rules.*` は応答時点のキャッシュを映すので、両者を突き合わせれば
+    「ゲートは過去の推薦時点、規則は今」というズレを読み手が検出できる。突き合わせは
+    consumer に任せ、ここで再評価はしない（正本は推薦エンジン1つ）。
+    """
+
+    gate: GateResult
+    candidate_coverage: float
+    judged_phase: Phase
+    evaluated_at: datetime
+    size: int | None
+    gamma: float
+    certain_rules_count: int
 
 
 def _runtime_config(s: Settings) -> RuntimeConfig:
@@ -164,12 +188,16 @@ def run_recommendation(
     snapshot_cache=None,
     now: datetime | None = None,
     log_kind: str = "recommend",
+    app_state=None,
 ) -> RecommendResponse:
     """推薦を1回実行する。
 
     ``log_kind`` は JSONL の ``kind``。本番経路は既定の ``"recommend"``。
     デモ・リプレイは別の値を渡して研究ログと混ぜない
     (ADR 0008 §1, docs/specs/parameter-tuning/README.md P-1)。
+
+    ``app_state`` を渡すと、本番経路のときだけ直近の品質ゲートを ``app_state.last_gate``
+    に控える (issue #34)。``/ops/state`` はこれを読むだけにする。
     """
     now = now or datetime.now(timezone.utc)
     cfg = _runtime_config(settings)
@@ -206,6 +234,19 @@ def run_recommendation(
         decision_table_size, certain_up, gamma, candidate_coverage, settings
     )
     judged_phase = decide_phase(decision_table_size, settings, gate=gate)
+
+    # /ops/state が「実際に下した判定」を語れるようにゲートを控える (issue #34)。
+    # 本番経路（log_kind="recommend"）だけ。デモ・リプレイの判定は混ぜない。
+    if app_state is not None and log_kind == "recommend":
+        app_state.last_gate = LastGate(
+            gate=gate,
+            candidate_coverage=candidate_coverage,
+            judged_phase=judged_phase,
+            evaluated_at=now,
+            size=decision_table_size,
+            gamma=gamma,
+            certain_rules_count=certain_up,
+        )
 
     # --- 退避ラダー: judged_phase と STRATEGY から実際の戦略を選び、
     #     実行できなければ静かに1段下る (docs/specs/04-strategies.md §5)。

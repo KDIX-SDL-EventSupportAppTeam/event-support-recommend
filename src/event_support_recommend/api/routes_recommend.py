@@ -54,6 +54,7 @@ async def recommend_cells(request: Request) -> RecommendResponse:
             settings=settings,
             rule_cache=_rule_cache(request),
             snapshot_cache=_snapshot_cache(request),
+            app_state=request.app.state,
         )
         # /ops/state が「実際に返した phase」を語れるようにする (04-observability.md T-44)。
         request.app.state.last_phase = resp.phase

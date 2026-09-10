@@ -53,17 +53,25 @@
     "count_certain_up": 4,          // 「>= HIGH」を結論する確実規則
     "count_certain_down": 3,        // 「<= LOW」
     "gamma": 0.62,                  // 近似の質
-    "candidate_coverage": 0.71,     // 直近リクエストで規則が当たった候補の割合
+    "candidate_coverage": 0.71,     // 直近の本番推薦で規則が当たった候補の割合。
+                                    // 推薦を1件も処理していなければ null（0 ではない）
     "consistency_level": 0.8
   },
   "phase": {
-    "current": "DRSA",
-    "quality_gate_passed": true,
+    "current": "DRSA",             // 実際に返したフェーズ。推薦前は件数だけの判定
+    "judged": "DRSA",              // 直近の本番推薦が下した判定。推薦前は null
+    "judged_at": "2026-10-16T04:39:12.123456+00:00",  // ゲートを評価した時刻。
+                                    // datetime.isoformat() のまま（+00:00 オフセット。
+                                    // "Z" 表記ではない）。マイクロ秒は 0 のとき省略され
+                                    // "2026-10-16T04:39:12+00:00" になりうる。推薦前は null
+    "quality_gate_passed": true,   // 推薦前は null
     "gate_detail": { "size": true, "rules": true, "gamma": true, "coverage": true },
+                                    // 推薦前は null（4項目を false で埋めない）
+    "gate_stats": { "size": 214, "gamma": 0.62, "rules": 4 },  // 評価時点の統計。推薦前は null
     "next_threshold": null
   },
   "experiment": {
-    "split_active": true,           // 参加者内ランダム化が発動しているか
+    "split_active": true,           // 参加者内ランダム化が発動しているか。推薦前は null
     "split_started_at": "2026-10-16T04:40:00Z"
   },
   "latency_ms": { "p50": 38, "p95": 112, "budget": 600 },
@@ -73,6 +81,46 @@
 
 **`gamma` と `candidate_coverage` は推薦エンジンしか知らない。**
 「DRSA と判定されているのに、実は規則が当たっていない」を検出する唯一の手段である。
+
+**品質ゲートの正本は推薦エンジン1つ (issue #34)。** `/ops/state` は
+`evaluate_quality_gate` を自分で呼ばない。直近の本番推薦（`kind="recommend"`）が
+評価した `GateResult` と `candidate_coverage` をそのまま返す。まだ1件も推薦を
+処理していなければ、`phase.judged` / `phase.quality_gate_passed` / `phase.gate_detail` /
+`rules.candidate_coverage` は **`null`** になる。**「計算していない」と「0」は別物**であり、
+0 や false で埋めない。consumer（frontend / analytics）は `null` を「未提供」として
+描き分けること。
+
+### 鮮度のズレを読み手が検出できるようにする
+
+`rules.*`（`gamma` / `count_certain_up` / `decision_table_size`）は**応答時点のキャッシュ**を映す。
+`phase.gate_detail` は**過去の推薦時点**の評価である。両者はズレうる（推薦のあとに規則が
+再生成されれば `rules.*` だけが進む）。
+
+- `phase.judged_at` … ゲートを評価した時刻。`datetime.isoformat()` の生の文字列
+  （`+00:00` オフセット。`"Z"` 表記ではない。例 `"2026-10-16T04:39:12.123456+00:00"`）。
+  **マイクロ秒は 0 のとき省略される**（`"2026-10-16T04:39:12+00:00"`）ので、
+  小数部の有無に依存してパースしないこと
+- `phase.gate_stats.size` / `.gamma` / `.rules` … その評価に使った統計
+
+**突き合わせは consumer が行う。** `/ops/state` は `gate_stats` と `rules.*` を並べて返すだけで、
+再評価はしない（正本は推薦エンジン1つ）。`gate_stats` と `rules.*` が食い違っていたら、
+`gate_detail` は古い可能性がある、と読む。
+
+### `experiment.split_active` の null
+
+- `true` … ゲート通過かつ `EXPERIMENT_SPLIT_ENABLED=true`
+- `false` … 推薦は処理したが上の条件を満たさない（**ゲート不通過など**）
+- `null` … 推薦を1件も処理していない（**未判定**）
+
+「ゲート不通過」と「未判定」を同じ `false` にしない。
+
+### 複数インスタンスでの読み方
+
+`app.state.last_gate` / `app.state.last_phase` は**プロセス内状態**である。Cloud Run が
+複数インスタンスで動いていると、`/ops/state` は**応答したインスタンスの観測しか語らない**。
+`phase.current` / `judged` / `judged_at` / `gate_*` はインスタンスごとに違いうる。
+当日は `--min-instances=1` 前提なので実害は小さいが、スケールアウト中に叩くと
+「まだ推薦していない」インスタンスが `null` を返すことがある。
 
 ---
 

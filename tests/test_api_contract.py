@@ -115,7 +115,11 @@ def test_ready_reports_not_warmed(client):
 
 
 def test_ops_state_reports_phase_and_gate(client):
+    # 推薦を1件も処理していない状態。品質ゲートは未計算なので null で返す
+    # （0 や false で埋めない。issue #34）。
     body = client.get("/ops/state").json()
     assert body["phase"]["current"] == "COVERAGE"
-    assert body["phase"]["quality_gate_passed"] is False
-    assert set(body["phase"]["gate_detail"]) == {"size", "rules", "gamma", "coverage"}
+    assert body["phase"]["judged"] is None
+    assert body["phase"]["quality_gate_passed"] is None
+    assert body["phase"]["gate_detail"] is None
+    assert body["rules"]["candidate_coverage"] is None
