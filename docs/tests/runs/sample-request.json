@@ -1,0 +1,20 @@
+{
+  "user_id": "verify-run-day",
+  "cell_count": 4,
+  "exclude_booth_ids": [],
+  "candidate_booths": [
+    { "booth_id": "b1", "category_id": "cat_a", "visitor_count": 3 },
+    { "booth_id": "b2", "category_id": "cat_b", "visitor_count": 40 },
+    { "booth_id": "b3", "category_id": "cat_c", "visitor_count": 12 },
+    { "booth_id": "b4", "category_id": "cat_a", "visitor_count": 25 },
+    { "booth_id": "b5", "category_id": "cat_b", "visitor_count": 8 }
+  ],
+  "pre_survey": {
+    "age_range": "20s",
+    "occupation": "student",
+    "industry": null,
+    "interest_categories": ["cat_a"],
+    "top_interest_category": "cat_a"
+  },
+  "visited_booths": []
+}

@@ -1,6 +1,6 @@
 ---
 状態: 確定
-最終更新: 2026-09-02
+最終更新: 2026-09-05
 ---
 
 # 当日の運用手引き — 気を付けること
@@ -29,7 +29,7 @@
 | **A-1** | **`READONLY_PROXY_URL` / `READONLY_PROXY_KEY` を Cloud Run に設定する** | **一日中 `COVERAGE` のまま。`SIMILARITY` / `DRSA` は一度も動かない**（下記 §2） |
 | **A-0** | **前日までに `main` を凍結する**（下記 §1.1） | **当日 `main` にマージした瞬間に本番が差し替わる** |
 | A-2 | サーバー側の `RECOMMENDER_URL` を Cloud Run の URL に設定する | 推薦が一度も呼ばれない |
-| A-3 | イベント開始1時間前に `--min-instances=1` へ上げる | コールドスタートで数秒かかり、サーバー側のタイムアウト（1000ms）に届かない |
+| A-3 | イベント開始1時間前に `--min-instances=1` へ上げる（コマンドは §8） | コールドスタートで数秒かかり、サーバー側のタイムアウト（1000ms）に届かない |
 | A-4 | [11-deployment.md](specs/11-deployment.md) §7 の V-9〜V-13 を通す | 結合と性能が未検証のまま本番に入る |
 
 ### A-1 が最重要である理由
@@ -142,7 +142,7 @@ GET /ops/state   （X-Ops-Token ヘッダが要る）
 
 ## 6. イベント終了後
 
-1. `--min-instances` を **0 に戻す**
+1. `--min-instances` を **0 に戻す**（§8 の「終了後」）
 2. 当日 env を上書きしていたら**手で消す**（`--update-env-vars` は既存の env を消さない）
 3. JSONL ログを Cloud Logging から回収する（下記）
 4. `user_id` を DB の参加者一覧と突合し、**参加者以外のリクエストを除外する**
@@ -169,3 +169,57 @@ gcloud logging read 'resource.type="cloud_run_revision"
 | デプロイし直したい | [11-deployment.md](specs/11-deployment.md) §9 |
 | 何を監視するのか詳しく | [10-observability.md](specs/10-observability.md) §4 |
 | そもそも何が成功なのか | [PURPOSE.md](PURPOSE.md) |
+
+---
+
+## 8. 当日担当者チェックリスト（2026-10-16 金）
+
+担当者: ＿＿＿＿（副: ＿＿＿＿）。このサービスを当日預かる人。§0〜§5 を前日までに読む。
+共通の変数（コマンドで使う。値は repo に既出のもののみ。**鍵・トークンは書かない**）:
+
+    PROJECT_ID=event-support-app  REGION=asia-northeast1  SERVICE=event-support-recommend
+
+| 時刻 | やること | コマンド／確認 | 記録（時刻・結果） |
+|---|---|---|---|
+| 前日まで | `main` の branch protection が有効（§9） | `gh api repos/KDIX-SDL-EventSupportAppTeam/event-support-recommend/branches/main/protection --jq .url` が 404 でない | |
+| 前日まで | チームに「当日 `main` にマージしない」を周知（server / frontend も同じ） | 周知先と時刻 | |
+| 前日まで | A-1・A-2 が済んでいる（`/ops/state` の `snapshot.ok`） | `curl -s -H "X-Ops-Token: $OPS_TOKEN" $SERVICE_URL/ops/state \| jq .snapshot.ok`（`OPS_TOKEN`・`SERVICE_URL` はシェル変数で渡し、ここに値を書かない） | |
+| 開始 1 時間前 | `--min-instances=1` へ上げる（A-3） | `gcloud run services update $SERVICE --project=$PROJECT_ID --region=$REGION --min-instances=1` | |
+| 上げた直後 | 反映確認 | `gcloud run services describe $SERVICE --project=$PROJECT_ID --region=$REGION --format="value(spec.template.metadata.annotations.autoscaling\.knative\.dev/minScale)"` → `1` | |
+| 上げて 10 分後 | T-6/T-7: 放置後の応答時間 | `curl -s -o /dev/null -w "%{time_total}\n" -H "Content-Type: application/json" -d @docs/tests/runs/sample-request.json $SERVICE_URL/recommend/cells` → **1.000 未満** | |
+| 同時 | T-8: `/ops/state` が従来どおり応答 | 上の `/ops/state` が 200 | |
+| 開場後 | §3「見るもの」を 1 時間ごとに確認。`phase` が 15 時でも `COVERAGE` なら **A-1 を疑う。main は触らない** | `/ops/state` の `phase.current` | |
+| 終了後 | `--min-instances=0` に戻す（O-6） | `gcloud run services update $SERVICE --project=$PROJECT_ID --region=$REGION --min-instances=0` | |
+| 終了後 | 当日 env の上書きがあれば手で消す。凍結解除（§9） | `gcloud run services describe … --format=yaml \| grep -n PHASE_` → 0 行 | |
+| 翌日 | 凍結が守られたかを機械判定 | `gh pr list --repo KDIX-SDL-EventSupportAppTeam/event-support-recommend --base main --state merged --search "merged:2026-10-16..2026-10-16" --json number` → `[]` | |
+
+`sample-request.json` は `docs/specs/01-io-contract.md` の正常ボディ例をそのまま置く（候補 5 件・`cell_count` 4。V-6 と同じもの）。**実 `user_id` を使わず `verify-` 接頭辞**にする（§6 の 4 で除外できるように）。
+
+---
+
+## 9. `main` の branch protection（前日までに設定・終了後に解除）
+
+設定できるのは repo の admin だけ。**当日の朝に設定しない**（触る回数を増やさない）。
+
+| 項目 | 値 |
+|---|---|
+| 対象 | `main` |
+| Require a pull request before merging | ON（approvals 1） |
+| Lock branch（read-only） | **ON**（当日はこれで PR のマージも止まる。T-3 の答え: 「マージも保護対象」） |
+| Do not allow bypassing the above settings | ON |
+
+設定コマンド（GitHub CLI・admin 権限）:
+
+    gh api -X PUT repos/KDIX-SDL-EventSupportAppTeam/event-support-recommend/branches/main/protection \
+      --input - <<'JSON'
+    {"required_status_checks":null,"enforce_admins":true,
+     "required_pull_request_reviews":{"required_approving_review_count":1},
+     "restrictions":null,"lock_branch":true,"allow_force_pushes":false,"allow_deletions":false}
+    JSON
+
+T-2 の確認（**設定画面を見るだけにしない**）: 一時ブランチから `git push origin HEAD:main --dry-run` を実行し、
+`remote: error: GH006: Protected branch update failed` 系の拒否が出ることを `docs/tests/runs/2026-10-16-run-day.md` に貼る。
+`--dry-run` でも保護は評価される。万一通ってしまう場合に備え、内容が `main` と同一のコミット（`git rev-parse origin/main`）を push 対象にする。
+
+解除（終了後・T-4）: `gh api -X DELETE repos/KDIX-SDL-EventSupportAppTeam/event-support-recommend/branches/main/protection`。
+解除できる人: ＿＿＿＿（admin）。解除時刻を §8 の記録欄に書く。
