@@ -26,11 +26,16 @@
 | 退避（DRSA→SIMILARITY→COVERAGE）の仕様 | [04-strategies.md](../04-strategies.md) §5 に確定済み |
 | DRSA コア（優越関係・近似・規則生成・γ） | 実装済み・純粋・テスト済み |
 | 条件属性 `preference_match` / `rating_affinity` | 実装済み |
-| `SIMILARITY` の近傍定義・ベイズ縮約 | [04-strategies.md](../04-strategies.md) §3 に数式まで確定済み。**実装のみ未** |
-| `RuleCache` | 実装済み。**put される日を待っている** |
-| `/ops/state` | 実装済み。中身が空なので `COVERAGE` を返しているだけ |
-| **データ供給（段3）** | **未実装。本仕様の主題** |
-| **`SIMILARITY` / `DRSA` の結線（段4）** | **未実装。本仕様の主題** |
+| `SIMILARITY` の近傍定義・ベイズ縮約 | [04-strategies.md](../04-strategies.md) §3 に数式まで確定済み。**実装済み** |
+| `RuleCache` | 実装済み。スナップショットの定期取得から `put()` される |
+| `/ops/state` | 実装済み。`snapshot` / `phase` の実値を返す |
+| **データ供給（段3）** | **実装済み**（`data/repository.py`・`data/`） |
+| **`SIMILARITY` / `DRSA` の結線（段4）** | **実装済み**（`strategies/`） |
+
+> **本仕様は実装済みである。** ただし `READONLY_PROXY_URL` が未設定のあいだは
+> `build_repository()` が `UnavailableRepository` を返し、スナップショットの定期取得が起動しない。
+> その状態では決定表が育たず、判定は常に `COVERAGE` になる（[OPERATIONS.md](../../OPERATIONS.md) A-1）。
+> **これは未実装ではなく未設定である。混同しないこと。**
 
 ## 読む順序
 

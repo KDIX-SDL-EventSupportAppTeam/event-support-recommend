@@ -38,8 +38,10 @@
 
 - 依存は `api/ → strategies/ → features/・drsa/ → data/` の一方向のみ（[08](docs/specs/08-architecture.md)）
 - **`features/` は分析リポジトリが import する公開 API。** FastAPI・DB に依存させない
-- 段1（`COVERAGE` ＋ `features/`）→ 段2（`drsa/`）→ 段3・4（`SIMILARITY` / `DRSA`）の順。
-  **段3以降は [ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md)（データ入手経路）の決着が必要。着手しない**
+- **段1〜段4 はすべて実装済み**（`features/` `drsa/` `data/` `cache/` `strategies/`）。
+  残るリスクは実装ではなく**設定**で、`READONLY_PROXY_URL` が未設定だと決定表が育たず
+  一日 `COVERAGE` 固定になる（[OPERATIONS.md](docs/OPERATIONS.md) A-1）。
+  **「未実装だから COVERAGE」と誤読しないこと**
 - テストは「起きてはいけないこと」から書く（[07](docs/specs/07-testing.md)）。
   最優先は**人気順になっていないこと**、次にフェーズ判定の境界値
 - コミット・PR は**日本語**（`種別(範囲): 要約`）。ただし**ブランチ名は半角英数字とハイフンのみ**（日本語不可）。

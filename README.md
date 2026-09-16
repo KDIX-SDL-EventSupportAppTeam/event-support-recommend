@@ -20,21 +20,25 @@
 
 ## 現在の状態
 
-**段1（`COVERAGE` ＋ `features/`）と段2（`drsa/` コア）を実装済み**
-（[ADR 0005](docs/decisions/adrs/0005-段1と段2のみ実装する.md)）。
+**段1〜段4 をすべて実装し、Cloud Run へデプロイ済み。**
+残るリスクは実装ではなく**設定**（下記 A-1）である。
 
 | 項目 | 状態 |
 |---|---|
 | 仕様書 | 一通り揃った（[docs/README.md](docs/README.md)） |
-| 実装 段1・段2 | **済**。`POST /recommend/cells` は `COVERAGE` を返す。`drsa/` は純粋・テスト済み |
-| 実装 段3・段4（`data/`・規則キャッシュ・`SIMILARITY` / `DRSA` 結線） | **未着手**（[ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md) の決着待ち） |
-| データ入手経路（[ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md)） | **未決定。`SIMILARITY` / `DRSA` はこれが決まるまで実装しない** |
+| 実装 段1・段2（`COVERAGE` ＋ `features/`・`drsa/` コア） | **済**。`drsa/` は純粋・テスト済み |
+| 実装 段3・段4（`data/`・規則キャッシュ・`SIMILARITY` / `DRSA` 結線） | **済**。`data/` `strategies/` `cache/` が揃い、`tests/` は21本 |
+| データ入手経路（[ADR 0002](docs/decisions/adrs/0002-決定表のデータ入手経路.md)） | **採用（案A′ 読み取り専用プロキシ）。** 設置一式は `event-support-analytics/deploy/sakura-readonly-proxy/` |
 | 事前アンケートの設問要求（[06](docs/specs/06-pre-survey-requirements.md)） | サーバー側の承認待ち。**締切はアンケート配布日** |
 | Cloud Run へのデプロイ | **初回デプロイ完了（2026-09-02）。** 確認 V-1〜V-8・V-14・V-15 合格（[11 §7.4](docs/specs/11-deployment.md)） |
+| `READONLY_PROXY_URL` / `READONLY_PROXY_KEY` の設定 | **未。先生からの鍵の受領待ち。これが当日の最大リスク** |
 
 > **当日サービスを預かる人は [docs/OPERATIONS.md](docs/OPERATIONS.md) を読むこと。**
 > とくに **A-1: `READONLY_PROXY_URL` が未設定だと一日中 `COVERAGE` のまま動く**
 > （段3・段4 は結線済みだが、設定が無いとスナップショットを取りに行かない）。
+>
+> **「実装が未着手だから `COVERAGE` のまま」ではない。** 実装は動いている。
+> 設定だけで研究が1本に縮むという、最も気づきにくい壊れ方をする。
 
 ```bash
 pip install -e ".[dev]" && pytest
@@ -78,7 +82,8 @@ gcloud builds submit --config cloudbuild.yaml \
   --substitutions=COMMIT_SHA="$(git rev-parse --short HEAD)"
 ```
 
-- **Cloud Run のプローブに `/ready` を使わない。** 段3 未結線のあいだ `/ready` は常に 503 が正常であり、
+- **Cloud Run のプローブに `/ready` を使わない。** `/ready` はスナップショットの状態を表すため、
+  `READONLY_PROXY_URL` 未設定時やスナップショット未構築のあいだは 503 を返すのが正常である。
   プローブに指定するとリビジョンが永久に起動しない（[11-deployment.md](docs/specs/11-deployment.md) X-1）。
   プローブは依存ゼロの `/health`
 - `APP_ENV=production` かつ `OPS_TOKEN` 未設定なら `/ops/*` も登録されない（無認証で素通しにしない・D-4）

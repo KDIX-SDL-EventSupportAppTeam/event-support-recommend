@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import urllib.error
 
 import pytest
 
@@ -113,6 +114,29 @@ def test_t4_repository_absorbs_broken_response():
         default_event_id="ev1",
     )
     assert repo.fetch().built is False
+
+
+# --------------------------------------------------------------------------- #
+# T-5: 例外メッセージに SQL 本文と鍵が含まれない（テーブル名だけが載る）
+# --------------------------------------------------------------------------- #
+def test_t5_error_message_has_no_sql_or_key(monkeypatch):
+    """T-5: プロキシが 500 相当を返しても、例外メッセージに SQL 本文と鍵が含まれない。"""
+    secret = "dummy-key-for-t5"
+
+    def boom(*a, **k):
+        raise urllib.error.HTTPError(
+            "https://proxy.invalid/ro", 500, "Internal Server Error", None, None
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    client = ReadonlyProxyClient("https://proxy.invalid/ro", secret, timeout_sec=1)
+    with pytest.raises(ProxyError) as ei:
+        client.select("booths", "SELECT `id` FROM `booths`", [])
+    msg = str(ei.value)
+    assert "booths" in msg              # テーブル名は載ってよい
+    assert "SELECT" not in msg.upper()  # SQL 本文は載らない
+    assert secret not in msg            # 鍵は載らない
+    assert "proxy.invalid" not in msg   # URL も載らない
 
 
 # --------------------------------------------------------------------------- #

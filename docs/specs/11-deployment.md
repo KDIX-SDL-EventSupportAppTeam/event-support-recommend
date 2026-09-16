@@ -25,12 +25,13 @@
 
 | 誤解しやすいこと | 事実 |
 |---|---|
-| 「推薦エンジンが DB を読む」 | **読まない。** 判断材料はリクエストボディが全部（[01-io-contract.md](01-io-contract.md) §2）。`data/` は `UnavailableRepository` のみ（[ADR 0002](../decisions/adrs/0002-決定表のデータ入手経路.md) 未決） |
-| 「デプロイに DB 接続情報が要る」 | **要らない。** MySQL・さくらプロキシへの結線は段3以降の話 |
+| 「推薦エンジンが参加者 DB へ直接つなぐ」 | **つながない。** 1リクエストの判断材料はリクエストボディが全部（[01-io-contract.md](01-io-contract.md) §2）。決定表は別経路（読み取り専用プロキシ）から**定期取得**する（[ADR 0002](../decisions/adrs/0002-決定表のデータ入手経路.md) 採用・案A′） |
+| 「デプロイに DB 接続情報が要る」 | **MySQL の接続情報は要らない。** ただし `READONLY_PROXY_URL` / `READONLY_PROXY_KEY` は要る。**無いと決定表が育たず一日 `COVERAGE` 固定**（[OPERATIONS.md](../OPERATIONS.md) A-1） |
 | 「アルゴリズム切り替えの仕組みを作る必要がある」 | **継ぎ目は既にある**（`strategies/base.py` の `Strategy` Protocol）。足りないのは選択の口だけ（[ADR 0007](../decisions/adrs/0007-戦略の選択を環境変数で行う.md)） |
 | 「最初はランダムで動かす」 | しない。`COVERAGE` が既に動いている。ランダムは**対照群・下限ベースライン**としてのみ持つ（[ADR 0007](../decisions/adrs/0007-戦略の選択を環境変数で行う.md)） |
 
-**このサービスはステートレスで、外部依存が一つも無い。** だから今のコードのままデプロイできる。
+**1リクエストの処理はステートレスで、外部依存が無い。** 推薦そのものは常に応答できる。
+決定表の取得は背景タスクであり、**落ちても止まっても推薦は `COVERAGE` として成立する。**
 
 ---
 
@@ -46,6 +47,34 @@
 | Cloud Run サービス名 | `event-support-recommend` | — |
 | イメージ名 | `event-support-recommend` | — |
 | ビルド | Cloud Build（`cloudbuild.yaml`） | サーバーと同じ |
+| デプロイの起動 | **`main` への push（CD トリガー）** | サーバー・フロントと同じ（下記 §1.1） |
+
+### 1.1 CD — `main` への push で自動デプロイする（2026-09-02 構成）
+
+`event-support-server` / `event-support-frontend` と**同じ型に揃えた**。
+
+| 項目 | 値 |
+|---|---|
+| トリガー名 | `deploy-event-support-recommend` |
+| リージョン | `asia-northeast1`（`global` には作らない。既存2件もこちら） |
+| GitHub 接続 | 第2世代。リポジトリごとに1接続（`event-support-recommend`） |
+| 発火条件 | `^main$` への push |
+| 設定ファイル | `cloudbuild.yaml` |
+| 実行サービスアカウント | `cloud-build-deployer@event-support-app.iam.gserviceaccount.com` |
+
+**トリガー経由なら `$COMMIT_SHA` が自動で入る。** 手動 `gcloud builds submit` で
+`--substitutions` を忘れて `ENGINE_VERSION` が空になる事故（X-6）が構造的に消える。
+**これが CD にする一番の実利であり、手動デプロイへ戻してはいけない理由である。**
+
+構築時につまずいた点:
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| `connections create` が `could not assert Secret Manager permissions` | Cloud Build の P4SA（`service-<番号>@gcp-sa-cloudbuild…`）に Secret Manager 権限が無い。接続時に GitHub トークンを Secret として保存するため要る | P4SA に `roles/secretmanager.admin` を付与 |
+| `repositories create` が `installation_state COMPLETE` を要求して失敗 | 接続が `PENDING_USER_OAUTH`。**GitHub 側の認可はブラウザ操作が必須** | `connections describe … --format="value(installationState.actionUri)"` の URL を開いて承認し、**対象リポジトリを App のインストール先に含める** |
+
+**当日は `main` を凍結する。** マージがそのまま本番差し替えになるため
+（[OPERATIONS.md](../OPERATIONS.md) §1.1・[ADR 0009](../decisions/adrs/0009-当日の切り替えは既定値のまま走らせ調整は事後に行う.md)）。
 
 ### サーバーと**揃えない**もの
 
@@ -83,9 +112,16 @@ tests docs tools
 *.md               （README.md は Dockerfile が COPY するので残す）
 ```
 
-### D-2 `/ready` は常に 503 を返す ★起動失敗の原因になる
+### D-2 `/ready` はプローブに使わない ★起動失敗の原因になる
 
-[routes_ops.py](../../src/event_support_recommend/api/routes_ops.py) の `/ready` は規則キャッシュが温まっていなければ 503 を返す。段3が未結線である以上、**本番では永久に 503 である**（これは仕様どおりの正しい挙動）。
+[routes_ops.py](../../src/event_support_recommend/api/routes_ops.py) の `/ready` は規則キャッシュが温まっていなければ 503 を返す。
+
+段3・段4 の結線後、`/ready` は**スナップショットと規則が温まったかを正しく表す**ようになった。
+ただし `READONLY_PROXY_URL` が未設定のあいだは定期取得が起動しないため、**503 のままである**
+（これは仕様どおりの正しい挙動。[OPERATIONS.md](../OPERATIONS.md) A-1）。
+
+**規則が0本でもサービスは正常である**（`COVERAGE` で応答できる）。
+つまり `/ready` の 503 は「サービスが使えない」ことを意味しない。
 
 - **Cloud Run のヘルスチェック（startup / liveness probe）に `/ready` を使ってはいけない。** 使うとリビジョンが起動しない
 - **プローブは `/health` のみ。** `/health` は依存ゼロで即答する
@@ -191,6 +227,8 @@ tests docs tools
 | 当日の対応 | **イベント開始1時間前に `--min-instances=1` へ引き上げ、終了後 0 に戻す**（サーバーと同じ運用） |
 | タイムアウトしたら | サーバーがフォールバックするのでアプリは止まらない（[08-architecture.md](08-architecture.md) §5）。ただし**フォールバック率が上がるぶん研究データが減る** |
 
+切替コマンドと記録欄は [OPERATIONS.md](../OPERATIONS.md) §8。
+
 **コールドスタートは「起きるかもしれない障害」ではなく「`min-instances=0` なら確実に起きること」として扱う。**
 
 ---
@@ -205,7 +243,7 @@ tests docs tools
 | # | 確認 | 期待 |
 |---|---|---|
 | V-1 | `GET /health` | 200・`engine_version` がデプロイしたコミット SHA |
-| V-2 | `GET /ready` | **503。これが正常**（段3未結線） |
+| V-2 | `GET /ready` | **503。`READONLY_PROXY_URL` 未設定のあいだはこれが正常**（鍵の設定後は 200 になる） |
 | V-3 | `GET /ops/state` トークン無し | **401** |
 | V-4 | `GET /ops/state` トークン有り | 200・`phase.current` が `COVERAGE`・`decision_table_size` が `null` |
 | V-5 | `GET /demo` トークン無し | **401**（`OPS_TOKEN` 設定時。未設定なら 404。ADR 0008 §2） |
@@ -318,6 +356,7 @@ ADR 0008 は `/demo` を推薦側に残すと決めたが、本番での**開き
 | X-7 | デプロイを機に `main` へ直接 push する | [rules/git.md](../rules/git.md) |
 | X-8 | `READONLY_PROXY_URL` 未設定のまま当日を迎える | **`SIMILARITY` / `DRSA` が一度も動かず、研究の主張が `COVERAGE` 1本に縮む**（D-6） |
 | X-9 | `READONLY_PROXY_KEY` に書き込み可能な鍵を入れる | 読むだけのサービスが書けてしまう。ADR 0002 の前提が崩れる |
+| X-10 | イベント当日に `main` へマージする | **CD が発火して本番が差し替わる**（§1.1・[OPERATIONS.md](../OPERATIONS.md) O-7） |
 
 ---
 
