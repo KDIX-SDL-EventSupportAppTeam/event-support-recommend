@@ -204,6 +204,14 @@ RANDOM ────────────────────────�
 > 4. 各マスの `reason.strategy` に `RANDOM / DRSA / SER / EXPLORE` を残す。SER は該当規則（第1希望・カテゴリ・★4率・件数）も残す
 >
 > セレンディピティ規則の作り方は [05-drsa.md](05-drsa.md) §8。
+>
+> **実装**: `assignment.select_picks`（選抜）と `assignment.tag_pick`（記録）。
+> 契約の `attributes` / `reason`（唯一の拡張口）には既存キーの意味を変えず新しいキーだけを足す:
+> `reason.strategy` = RANDOM / DRSA / SER / EXPLORE（そのマスを選んだ方法）、`reason.scored_by`（採点した戦略）、
+> `reason.slot` = MISMATCH_QUOTA / REST、SER のときは `reason.ser_rule`（規則 id・第1希望・カテゴリ・★4率・件数・人数・カテゴリ自体の★4率）、
+> `attributes.slot`。`scores` は候補全件のまま。ログ `kind=recommend` には `assigned_strategies`、
+> `/ops/state` の `ser.used` に累計（`by_strategy`）を出す。
+> 関心外の候補が足りない・候補が空・全ブース訪問済みでも落ちず、枠が埋まらなければ全体の順位で埋める（それでも足りなければ埋めない）。
 
 ### 旧手順（参考）
 

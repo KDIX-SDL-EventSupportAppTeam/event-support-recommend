@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from ..cache import RuleCache, SnapshotCache
 from ..data import build_repository
-from ..engine import run_recommendation
+from ..engine import SlotStats, run_recommendation
 from ..phases import decide_phase
 from ..settings import Settings, get_settings
 from ..snapshot_build import refresh_caches
@@ -154,6 +154,8 @@ async def ops_state(request: Request) -> dict:
         # セレンディピティ規則 (rst/)。関心外の評価が ser_min_rows 件を超えるまで規則は 0 本
         "ser": {
             **rc.ser_state(),
+            # マスを選んだ方法の累計（本番経路のみ）。SER で選ばれた回数 = by_strategy.SER
+            "used": (getattr(request.app.state, "slot_stats", None) or SlotStats()).state(),
             "min_rows": s.ser_min_rows,
             "active": rc.ser_state()["mismatch_rows"] >= s.ser_min_rows,
         },
