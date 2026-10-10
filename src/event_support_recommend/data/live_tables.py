@@ -30,10 +30,19 @@ LIVE_TABLES: dict[str, tuple[str, ...]] = {
     "users": ("id", "role"),
 }
 
+# 任意のテーブル。取れなくてもスナップショット全体は失敗にしない（無ければ該当の信号が 0 になるだけ）。
+# 決定表の「自発訪問 (source = FREE_VISIT)」を推薦時と同じ定義で数えるために要る
+# (docs/specs/05-drsa.md §7)。`check_ins` に source が無いので、カード → セル経由で引く。
+# bingo_cells は user_id・event_id を持たない（card_id 経由）。bingo_cards の event_id で絞る。
+OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
+    "bingo_cards": ("id", "event_id", "user_id"),
+    "bingo_cells": ("card_id", "booth_id", "source"),
+}
+
 # event_id で直接絞るテーブル。`users` はここに入れない
 # （users.event_id で絞ると出展者・運営アカウントが混ざる、01-snapshot-source.md）。
 EVENT_SCOPED_TABLES: frozenset[str] = frozenset(
-    {"check_ins", "booth_ratings", "user_survey_answers", "booths", "categories"}
+    {"check_ins", "booth_ratings", "user_survey_answers", "booths", "categories", "bingo_cards"}
 )
 
 # 決して要求してはならない列（防御。定義に入れていないので通常は到達しない）。
@@ -48,10 +57,10 @@ def build_select(table: str, event_id: str | None) -> tuple[str, list]:
     - `EVENT_SCOPED_TABLES` かつ `event_id` が与えられていれば `WHERE event_id = ?`
       （プレースホルダは `?`。プロキシは mysql2 互換 = event-support-server/src/db/http-proxy.ts） を付ける
     """
-    if table not in LIVE_TABLES:
+    if table not in LIVE_TABLES and table not in OPTIONAL_TABLES:
         raise ProxyError(f"unknown table {table!r}")
 
-    columns = LIVE_TABLES[table]
+    columns = LIVE_TABLES.get(table) or OPTIONAL_TABLES[table]
     if FORBIDDEN_COLUMNS & set(columns):
         raise ProxyError(f"forbidden column requested for table {table!r}")
 

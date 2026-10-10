@@ -294,5 +294,5 @@ def test_happy_path_builds_snapshot_with_all_tables():
     assert snap.built is True
     assert snap.participants == 1  # exhibitor は数えない
     assert snap.booths == 1
-    assert set(snap.tables) == set(LIVE_TABLES)
+    assert set(LIVE_TABLES) <= set(snap.tables)  # 任意テーブル（bingo_*）も取れていれば入る
     assert snap.decision_table_size is None  # 決定表の組み立ては段3-b
