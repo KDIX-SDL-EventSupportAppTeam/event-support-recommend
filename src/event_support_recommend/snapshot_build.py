@@ -342,22 +342,16 @@ def refresh_caches(snapshot, *, settings, rule_cache: RuleCache, snapshot_cache:
     )
     built_at = getattr(snapshot, "built_at", None) or datetime.now(timezone.utc)
     rate_high, rate_low = base_rates(records)
-    rule_cache.put(
-        ruleset,
-        decision_table_size=len(records),
-        gamma=approx.gamma,
-        built_at=built_at,
-        base_rate_high=rate_high,
-        base_rate_low=rate_low,
-    )
 
-    # セレンディピティ規則。失敗しても DRSA 側のキャッシュ更新は止めない（前回の規則を保持する）。
+    # セレンディピティ規則。失敗しても DRSA 側の更新は止めない（前回の規則を保持する）。
+    new_ser: tuple[SerRule, ...] | None
     try:
-        ser_rules, ser_rows = build_serendipity_rules(tables, settings)
-        rule_cache.put_ser(ser_rules, mismatch_rows=ser_rows, built_at=built_at)
+        new_ser, ser_rows = build_serendipity_rules(tables, settings)
+        ser_rules = new_ser
     except Exception as exc:  # pragma: no cover - 防御
         jsonl.emit("snapshot", {"ok": True, "ser_failed": repr(exc)})
-        ser_rules, ser_rows = rule_cache.ser_rules, -1
+        new_ser, ser_rows = None, -1
+        ser_rules = rule_cache.ser_rules
 
     # SIMILARITY 用の生データ。
     visits = _rated_visits(
@@ -378,6 +372,19 @@ def refresh_caches(snapshot, *, settings, rule_cache: RuleCache, snapshot_cache:
         str(s.get("user_id")): _survey_axes(_parse_survey_row(s))
         for s in tables.get("user_survey_answers", [])
     }
+
+    # ここまでで重い計算はすべて終わっている。以降は短い差し替えだけ（途中で例外が出ても
+    # 前回のキャッシュが残る）。
+    rule_cache.put(
+        ruleset,
+        decision_table_size=len(records),
+        gamma=approx.gamma,
+        built_at=built_at,
+        base_rate_high=rate_high,
+        base_rate_low=rate_low,
+        ser_rules=new_ser,
+        ser_mismatch_rows=max(ser_rows, 0),
+    )
     snapshot_cache.put(
         decision_table_size=len(records),
         surveys=surveys_raw,

@@ -67,8 +67,16 @@ class RuleCache:
         built_at: datetime | None = None,
         base_rate_high: float | None = None,
         base_rate_low: float | None = None,
+        ser_rules: tuple[SerRule, ...] | None = None,
+        ser_mismatch_rows: int = 0,
     ) -> None:
+        """DRSA 規則を差し替える。`ser_rules` を渡したときは同じロックの中で一緒に差し替える
+        （更新の途中の状態を /recommend に見せない）。None なら前回のセレンディピティ規則を保つ。"""
         with self._lock:
+            if ser_rules is not None:
+                self._ser_rules = tuple(ser_rules)
+                self._ser_rows = ser_mismatch_rows
+                self._ser_built_at = built_at or datetime.now(timezone.utc)
             self._base_rate_high = base_rate_high
             self._base_rate_low = base_rate_low
             self._ruleset = ruleset
