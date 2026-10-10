@@ -14,6 +14,7 @@ import threading
 from datetime import datetime, timezone
 
 from ..drsa import RuleSet
+from ..rst import SerRule
 
 
 class RuleCache:
@@ -27,6 +28,10 @@ class RuleCache:
         # (docs/specs/03-phases.md §3.3)。決定表が空なら None。
         self._base_rate_high: float | None = None
         self._base_rate_low: float | None = None
+        # セレンディピティ規則 (rst/)。DRSA の規則とは独立に持つ。
+        self._ser_rules: tuple[SerRule, ...] = ()
+        self._ser_rows: int = 0  # 規則の材料にできた関心外の評価の件数
+        self._ser_built_at: datetime | None = None
 
     @property
     def ready(self) -> bool:
@@ -70,6 +75,28 @@ class RuleCache:
             self._decision_table_size = decision_table_size
             self._gamma = gamma
             self._built_at = built_at or datetime.now(timezone.utc)
+
+    @property
+    def ser_rules(self) -> tuple[SerRule, ...]:
+        with self._lock:
+            return self._ser_rules
+
+    def put_ser(
+        self, rules: tuple[SerRule, ...], *, mismatch_rows: int, built_at: datetime | None = None
+    ) -> None:
+        with self._lock:
+            self._ser_rules = tuple(rules)
+            self._ser_rows = mismatch_rows
+            self._ser_built_at = built_at or datetime.now(timezone.utc)
+
+    def ser_state(self) -> dict:
+        with self._lock:
+            return {
+                "count": len(self._ser_rules),
+                "mismatch_rows": self._ser_rows,
+                "built_at": self._ser_built_at.isoformat() if self._ser_built_at else None,
+                "rules": [r.summary() for r in self._ser_rules],
+            }
 
     def snapshot_state(self) -> dict:
         with self._lock:

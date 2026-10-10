@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 from . import features, logging as jsonl
 from .cache import RuleCache, SnapshotCache
 from .drsa import DecisionTable, approximate, generate_rules
-from .models import DecisionClass, Survey, Visit, VisitSource
+from .models import DecisionClass, InterestMatch, Survey, Visit, VisitSource
+from .rst import SerObservation, SerRule, build_ser_rules
 
 
 # --------------------------------------------------------------------------- #
@@ -274,6 +275,52 @@ def base_rates(records: list[dict]) -> tuple[float | None, float | None]:
     return high / n, (n - high) / n
 
 
+def build_serendipity_rules(
+    snapshot_tables: dict[str, list[dict]], settings
+) -> tuple[tuple[SerRule, ...], int]:
+    """関心外ブースへの評価だけから、セレンディピティ規則を作る。純関数。
+
+    戻り値は (規則, 規則の材料にできた関心外の評価の件数)。
+    関心外 = `features.interest_match` が MISMATCH（評価者の事前アンケートに照らして）。
+    関心一致 (MATCH/PARTIAL) や判定不能 (UNKNOWN) の評価は材料にしない。
+    ただし「そのカテゴリ自体の★4率」は、比較基準として**全員の評価**から求める（人気カテゴリを拾わないため）。
+    条件は 第1希望 × ブースのカテゴリ の 2 つだけ。性別・年代などの個人属性は使わない。
+    """
+    visits = _rated_visits(
+        snapshot_tables,
+        default_scale=settings.rating_scale_default,
+        high_ratio=settings.high_rating_ratio,
+        low_ratio=settings.low_rating_ratio,
+    )
+    surveys = {
+        str(s.get("user_id")): _parse_survey_row(s)
+        for s in snapshot_tables.get("user_survey_answers", [])
+    }
+    observations: list[SerObservation] = []
+    category_ratings: list[tuple[str, bool]] = []
+    for v in visits:
+        if v.category_id is None:
+            continue
+        high = v.decision == DecisionClass.HIGH
+        category_ratings.append((v.category_id, high))
+        survey = surveys.get(v.user_id, Survey.empty())
+        if survey.top_interest_category is None:
+            continue
+        if features.interest_match(v.category_id, survey) != InterestMatch.MISMATCH:
+            continue
+        observations.append(SerObservation(v.user_id, survey.top_interest_category, v.category_id, high))
+    rules = build_ser_rules(
+        observations,
+        category_ratings,
+        min_rows=settings.ser_min_rows,
+        smin=settings.ser_smin,
+        min_persons=settings.ser_min_persons,
+        min_p=settings.ser_min_p,
+        lift=settings.ser_lift,
+    )
+    return rules, len(observations)
+
+
 # --------------------------------------------------------------------------- #
 # キャッシュ更新（バックグラウンドの1周）
 # --------------------------------------------------------------------------- #
@@ -303,6 +350,14 @@ def refresh_caches(snapshot, *, settings, rule_cache: RuleCache, snapshot_cache:
         base_rate_high=rate_high,
         base_rate_low=rate_low,
     )
+
+    # セレンディピティ規則。失敗しても DRSA 側のキャッシュ更新は止めない（前回の規則を保持する）。
+    try:
+        ser_rules, ser_rows = build_serendipity_rules(tables, settings)
+        rule_cache.put_ser(ser_rules, mismatch_rows=ser_rows, built_at=built_at)
+    except Exception as exc:  # pragma: no cover - 防御
+        jsonl.emit("snapshot", {"ok": True, "ser_failed": repr(exc)})
+        ser_rules, ser_rows = rule_cache.ser_rules, -1
 
     # SIMILARITY 用の生データ。
     visits = _rated_visits(
@@ -341,6 +396,8 @@ def refresh_caches(snapshot, *, settings, rule_cache: RuleCache, snapshot_cache:
             "gamma": approx.gamma,
             "base_rate_high": rate_high,
             "base_rate_low": rate_low,
+            "ser_rules": len(ser_rules),
+            "ser_mismatch_rows": ser_rows,
             "global_mean": round(global_mean, 4),
         },
     )

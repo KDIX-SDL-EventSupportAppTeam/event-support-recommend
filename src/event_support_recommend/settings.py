@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     drsa_coverage_floor: float = 0.2
     max_per_category: int = 0  # 0 = 無効
 
+    # --- セレンディピティ規則 (rst/, docs/specs/05-drsa.md §8, ADR 0010) ---
+    # 関心外ブースへの評価だけから「第1希望 × カテゴリ → ★4」を作る。数値の根拠はシミュレーション。
+    ser_min_rows: int = 20  # 関心外の評価がこれ未満なら規則を作らない
+    ser_smin: int = 5  # グループの最小件数（DRSA の min_support と同じ「各5件」）
+    ser_min_persons: int = 3  # グループの最小人数。1人の癖を規則にしない
+    ser_min_p: float = 0.5  # グループの★4率の下限
+    # グループの★4率 − そのカテゴリ自体の★4率 の下限。比較基準を全体の★4率にすると人気カテゴリを拾う
+    ser_lift: float = 0.15
+
     # --- DRSA ---
     # 0.8 では確実規則がほとんど出なかった。偽の規則はリフト条件で防ぐ (ADR 0010)。
     drsa_consistency: float = 0.6

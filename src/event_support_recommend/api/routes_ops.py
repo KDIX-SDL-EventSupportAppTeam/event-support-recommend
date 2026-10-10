@@ -151,6 +151,12 @@ async def ops_state(request: Request) -> dict:
             "gate_detail": gate_detail,
             "gate_stats": gate_stats,
         },
+        # セレンディピティ規則 (rst/)。関心外の評価が ser_min_rows 件を超えるまで規則は 0 本
+        "ser": {
+            **rc.ser_state(),
+            "min_rows": s.ser_min_rows,
+            "active": rc.ser_state()["mismatch_rows"] >= s.ser_min_rows,
+        },
         "experiment": {
             "split_active": split_active,
             "split_started_at": None,
