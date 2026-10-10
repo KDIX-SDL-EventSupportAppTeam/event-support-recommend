@@ -51,7 +51,7 @@ def _clear_phase_tracker():
 # --------------------------------------------------------------------------- #
 def test_t44_ops_state_current_matches_returned_phase(client):
     # 判定は SIMILARITY（size 40）だが snapshot 無し → 実際は COVERAGE。
-    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     r = client.post("/recommend/cells", json=_payload())
     returned = r.json()["phase"]
     state = client.get("/ops/state").json()
@@ -132,9 +132,9 @@ def test_t48_phase_changed_emitted_on_transition(capsys):
     req = RecommendRequest.model_validate(_payload())
 
     run_recommendation(req, settings=s, rule_cache=rc, snapshot_cache=sc)          # COVERAGE
-    rc.put(_rules(), decision_table_size=40, gamma=1.0)
+    rc.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     run_recommendation(req, settings=s, rule_cache=rc, snapshot_cache=sc)          # SIMILARITY
-    rc.put(_rules(), decision_table_size=90, gamma=1.0)
+    rc.put(_rules(), decision_table_size=90, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     run_recommendation(req, settings=s, rule_cache=rc, snapshot_cache=sc)          # DRSA
 
     changes = [

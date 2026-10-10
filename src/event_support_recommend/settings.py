@@ -31,7 +31,12 @@ class Settings(BaseSettings):
     )
 
     # --- 品質ゲート (docs/specs/03-phases.md §3.3) ---
-    drsa_min_rules: int = 3
+    # 確実規則は「上方・下方合わせて、確信度 − 基準率 >= drsa_min_lift」のものを数える。
+    # 旧: 上方だけで 3 本。条件属性が実質 1 つで最大 2 本前後しか出ず、DRSA が解放の 0〜4% しか動かなかった。
+    # γ は予測力を測らないので、★4 を付けやすい会場では偽の規則が確信度だけでゲートを通る。
+    # リフトで防ぐ (ADR 0010, docs/specs/03-phases.md §3.3)。
+    drsa_min_rules: int = 2
+    drsa_min_lift: float = 0.10
     drsa_min_gamma: float = 0.5
     drsa_min_coverage: float = 0.5
 
@@ -59,7 +64,10 @@ class Settings(BaseSettings):
     max_per_category: int = 0  # 0 = 無効
 
     # --- DRSA ---
-    drsa_consistency: float = 0.8
+    # 0.8 では確実規則がほとんど出なかった。偽の規則はリフト条件で防ぐ (ADR 0010)。
+    drsa_consistency: float = 0.6
+    # 最小支持 5 = 属性パターンあたり最低5件 (docs/specs/05-drsa.md §3)。
+    # 高評価は★4 のみ: high_rating_ratio=0.75 は4段階の★4 だけ。★3 以上にすると誤作動が 9〜10% (ADR 0010)。
     min_support: int = 5
 
     # --- スナップショット取得（段3 / ADR 0002）---

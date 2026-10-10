@@ -62,7 +62,7 @@ def _drsa_state():
     ratings = {f"n{i}": {"b1": 0.8, "b2": 0.3} for i in range(5)}
     sc.put(decision_table_size=90, surveys=surveys, ratings_by_user=ratings,
            booth_category={}, global_mean=0.5)
-    rc.put(_rules(), decision_table_size=90, gamma=1.0)
+    rc.put(_rules(), decision_table_size=90, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     st = _State()
     resp = run_recommendation(
         RecommendRequest.model_validate(_payload()),
@@ -86,7 +86,7 @@ def test_t1_ops_state_null_before_any_recommendation(client):
 # T-2: 推薦を1件処理したあと、gate_detail がその回の判定と一致
 # --------------------------------------------------------------------------- #
 def test_t2_ops_state_matches_last_recommendation(client):
-    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     client.post("/recommend/cells", json=_payload())
     last_gate = client.app.state.last_gate
     body = client.get("/ops/state").json()
@@ -126,7 +126,7 @@ def test_t5_judged_can_be_drsa():
 # T-6: phase.current は実際に返したフェーズと一致（T-44 の回帰）
 # --------------------------------------------------------------------------- #
 def test_t6_current_matches_returned_phase(client):
-    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     returned = client.post("/recommend/cells", json=_payload()).json()["phase"]
     body = client.get("/ops/state").json()
     assert body["phase"]["current"] == returned
@@ -166,7 +166,7 @@ def test_demo_kind_does_not_write_last_gate():
 def test_judged_at_null_before_and_iso_utc_after(client):
     assert client.get("/ops/state").json()["phase"]["judged_at"] is None
 
-    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     client.post("/recommend/cells", json=_payload())
     body = client.get("/ops/state").json()
 
@@ -182,14 +182,19 @@ def test_judged_at_null_before_and_iso_utc_after(client):
 # 続き #1: gate_stats は推薦時点のまま、rules.* だけがキャッシュ更新で進む
 # --------------------------------------------------------------------------- #
 def test_gate_stats_frozen_while_rules_move(client):
-    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     client.post("/recommend/cells", json=_payload())
 
     before = client.get("/ops/state").json()
-    assert before["phase"]["gate_stats"] == {"size": 40, "gamma": 1.0, "rules": before["rules"]["count_certain_up"]}
+    stats = before["phase"]["gate_stats"]
+    assert (stats["size"], stats["gamma"]) == (40, 1.0)
+    # ゲートが数えるのは有効な確実規則（上下合わせ・リフト条件つき）。生の本数は certain_rules
+    assert stats["certain_rules"] == before["rules"]["count_certain_up"] + before["rules"]["count_certain_down"]
+    assert 0 < stats["rules"] <= stats["certain_rules"]
+    assert (stats["base_rate_high"], stats["base_rate_low"], stats["min_lift"]) == (0.5, 0.5, 0.10)
 
     # 推薦せずにキャッシュだけ別の size/gamma で入れ替える
-    client.app.state.rule_cache.put(_rules(), decision_table_size=99, gamma=0.5)
+    client.app.state.rule_cache.put(_rules(), decision_table_size=99, gamma=0.5, base_rate_high=0.5, base_rate_low=0.5)
     after = client.get("/ops/state").json()
 
     # gate 側は推薦時点で固定
@@ -210,7 +215,7 @@ def test_split_active_null_before_recommendation(client):
 
 
 def test_split_active_false_when_gate_fails(client):
-    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     client.post("/recommend/cells", json=_payload())  # size 40 → SIMILARITY, ゲート不通過
     assert client.get("/ops/state").json()["experiment"]["split_active"] is False
 
@@ -219,7 +224,7 @@ def test_split_active_true_when_enabled_and_gate_passes():
     s = Settings(_env_file=None, enabled_attributes=list(NAMES),
                  drsa_min_rules=1, experiment_split_enabled=True)
     with TestClient(create_app(s)) as c:
-        c.app.state.rule_cache.put(_rules(), decision_table_size=90, gamma=1.0)
+        c.app.state.rule_cache.put(_rules(), decision_table_size=90, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
         sc = c.app.state.snapshot_cache
         axes = {"interest_categories": ["hi"], "age_range": "20s", "occupation": "x"}
         sc.put(decision_table_size=90,
