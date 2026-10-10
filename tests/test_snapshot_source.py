@@ -296,3 +296,27 @@ def test_happy_path_builds_snapshot_with_all_tables():
     assert snap.booths == 1
     assert set(LIVE_TABLES) <= set(snap.tables)  # 任意テーブル（bingo_*）も取れていれば入る
     assert snap.decision_table_size is None  # 決定表の組み立ては段3-b
+
+
+# --------------------------------------------------------------------------- #
+# #46: ENABLED_ATTRIBUTES はカンマ区切りと JSON 配列の両方を受ける
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "raw",
+    ["preference_match,rating_affinity", " preference_match , rating_affinity ",
+     '["preference_match","rating_affinity"]'],
+)
+def test_enabled_attributes_from_env(monkeypatch, raw):
+    monkeypatch.setenv("ENABLED_ATTRIBUTES", raw)
+    assert Settings(_env_file=None).enabled_attributes == ["preference_match", "rating_affinity"]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["preference_match,rating_affinity", '["preference_match","rating_affinity"]'],
+)
+def test_enabled_attributes_from_dotenv(monkeypatch, tmp_path, raw):
+    monkeypatch.delenv("ENABLED_ATTRIBUTES", raising=False)
+    f = tmp_path / ".env"
+    f.write_text(f"ENABLED_ATTRIBUTES={raw}\n", encoding="utf-8")
+    assert Settings(_env_file=str(f)).enabled_attributes == ["preference_match", "rating_affinity"]

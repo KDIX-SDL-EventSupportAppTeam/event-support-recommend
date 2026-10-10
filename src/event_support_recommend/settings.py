@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from . import __version__
 
@@ -26,7 +28,8 @@ class Settings(BaseSettings):
     # --- フェーズ ---
     phase_similarity_min: int = 30
     phase_drsa_min: int = 60
-    enabled_attributes: list[str] = Field(
+    # NoDecode: pydantic-settings が JSON として先に解釈するのを止め、下の _split_csv に任せる (#46)。
+    enabled_attributes: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["preference_match", "rating_affinity"]
     )
 
@@ -117,8 +120,12 @@ class Settings(BaseSettings):
     @field_validator("enabled_attributes", mode="before")
     @classmethod
     def _split_csv(cls, v: object) -> object:
+        # カンマ区切り（a,b）と JSON 配列（["a","b"]）の両方を受ける。
         if isinstance(v, str):
-            return [s.strip() for s in v.split(",") if s.strip()]
+            text = v.strip()
+            if text.startswith("["):
+                return json.loads(text)
+            return [s.strip() for s in text.split(",") if s.strip()]
         return v
 
     @property
