@@ -17,7 +17,7 @@ from typing import Protocol, runtime_checkable
 
 from .. import logging as jsonl
 from ..models import EventSnapshot
-from .live_tables import EVENT_SCOPED_TABLES, LIVE_TABLES, build_select
+from .live_tables import EVENT_SCOPED_TABLES, LIVE_TABLES, OPTIONAL_TABLES, build_select
 from .proxy import ProxyError, ReadonlyProxyClient
 
 
@@ -81,6 +81,15 @@ class ProxySnapshotRepository:
             # str(exc) はテーブル名までしか含まない（proxy.py / live_tables.py で保証）。
             jsonl.emit("snapshot", {"ok": False, "error": str(exc), "event_id": eid})
             return EventSnapshot.unavailable()
+
+        # 任意テーブル: 失敗してもスナップショットは成立させる（自発訪問の +1 が数えられなくなるだけ）。
+        for name in OPTIONAL_TABLES:
+            try:
+                scoped_eid = eid if name in EVENT_SCOPED_TABLES else None
+                sql, params = build_select(name, scoped_eid)
+                tables[name] = self._client.select(name, sql, params)
+            except ProxyError as exc:
+                jsonl.emit("snapshot", {"ok": True, "optional_table_failed": str(exc), "event_id": eid})
 
         participants = sum(
             1 for u in tables.get("users", []) if str(u.get("role")) == "participant"

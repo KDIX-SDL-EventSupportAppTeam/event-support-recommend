@@ -23,6 +23,10 @@ class RuleCache:
         self._built_at: datetime | None = None
         self._decision_table_size: int | None = None
         self._gamma: float = float("nan")
+        # 決定表全体の基準率。品質ゲートのリフト条件の比較基準
+        # (docs/specs/03-phases.md §3.3)。決定表が空なら None。
+        self._base_rate_high: float | None = None
+        self._base_rate_low: float | None = None
 
     @property
     def ready(self) -> bool:
@@ -43,6 +47,12 @@ class RuleCache:
         with self._lock:
             return self._decision_table_size
 
+    @property
+    def base_rates(self) -> tuple[float | None, float | None]:
+        """(高評価の基準率, 低評価の基準率)。上方規則は前者、下方規則は後者と比べる。"""
+        with self._lock:
+            return self._base_rate_high, self._base_rate_low
+
     def put(
         self,
         ruleset: RuleSet,
@@ -50,8 +60,12 @@ class RuleCache:
         decision_table_size: int | None,
         gamma: float,
         built_at: datetime | None = None,
+        base_rate_high: float | None = None,
+        base_rate_low: float | None = None,
     ) -> None:
         with self._lock:
+            self._base_rate_high = base_rate_high
+            self._base_rate_low = base_rate_low
             self._ruleset = ruleset
             self._decision_table_size = decision_table_size
             self._gamma = gamma
@@ -67,4 +81,6 @@ class RuleCache:
                 "gamma": self._gamma,
                 "consistency_level": rs.consistency_level if rs else None,
                 "decision_table_size": self._decision_table_size,
+                "base_rate_high": self._base_rate_high,
+                "base_rate_low": self._base_rate_low,
             }
