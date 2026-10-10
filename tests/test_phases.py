@@ -40,7 +40,7 @@ def test_threshold_is_configurable():
 
 
 def test_gate_all_pass_promotes_to_drsa():
-    gate = evaluate_quality_gate(60, 3, 0.6, 0.6, s())
+    gate = evaluate_quality_gate(60, 2, 0.6, 0.6, s())
     assert gate.passed is True
     assert decide_phase(60, s(), gate=gate) is Phase.DRSA
 
@@ -48,9 +48,9 @@ def test_gate_all_pass_promotes_to_drsa():
 @pytest.mark.parametrize(
     "rules,gamma,cov",
     [
-        (2, 0.6, 0.6),  # 規則不足
-        (3, 0.4, 0.6),  # γ 不足
-        (3, 0.6, 0.3),  # 被覆率不足
+        (1, 0.6, 0.6),  # 規則不足（DRSA_MIN_RULES=2）
+        (2, 0.4, 0.6),  # γ 不足
+        (2, 0.6, 0.3),  # 被覆率不足
     ],
 )
 def test_gate_any_missing_stays_similarity(rules, gamma, cov):
@@ -60,7 +60,7 @@ def test_gate_any_missing_stays_similarity(rules, gamma, cov):
 
 
 def test_gate_detail_is_itemised():
-    gate = evaluate_quality_gate(60, 2, 0.4, 0.6, s())
+    gate = evaluate_quality_gate(60, 1, 0.4, 0.6, s())
     d = gate.detail.as_dict()
     assert d == {"size": True, "rules": False, "gamma": False, "coverage": True}
 

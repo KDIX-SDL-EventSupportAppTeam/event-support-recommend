@@ -32,7 +32,7 @@ from .models import (
     VisitSource,
     InterestMatch,
 )
-from .phases import GateResult, decide_phase, evaluate_quality_gate
+from .phases import GateResult, count_effective_rules, decide_phase, evaluate_quality_gate
 from .settings import Settings
 from .strategies import StrategyUnavailable
 from .strategies.common import compute_candidate_features, vector_from_features
@@ -61,7 +61,11 @@ class LastGate:
     evaluated_at: datetime
     size: int | None
     gamma: float
+    # ゲートが数えた「有効な確実規則」（上下合わせ・リフト条件つき）。生の本数は certain_rules_count。
+    effective_rules_count: int
     certain_rules_count: int
+    base_rate_high: float | None = None
+    base_rate_low: float | None = None
 
 
 def _runtime_config(s: Settings) -> RuntimeConfig:
@@ -218,7 +222,9 @@ def run_recommendation(
         return _empty_response()
 
     # --- 品質ゲート & フェーズ判定 ---
-    certain_up = len(ruleset.certain_up) if ruleset else 0
+    certain_total = len(ruleset.certain_up) + len(ruleset.certain_down) if ruleset else 0
+    base_high, base_low = rule_cache.base_rates
+    effective_rules = count_effective_rules(ruleset, base_high, base_low, settings.drsa_min_lift)
     candidate_coverage = 0.0
     if ruleset is not None and ruleset.rules:
         try:
@@ -231,7 +237,7 @@ def run_recommendation(
         except Exception:  # pragma: no cover - 防御。ゲートは覆えない側に倒す
             candidate_coverage = 0.0
     gate = evaluate_quality_gate(
-        decision_table_size, certain_up, gamma, candidate_coverage, settings
+        decision_table_size, effective_rules, gamma, candidate_coverage, settings
     )
     judged_phase = decide_phase(decision_table_size, settings, gate=gate)
 
@@ -245,7 +251,10 @@ def run_recommendation(
             evaluated_at=now,
             size=decision_table_size,
             gamma=gamma,
-            certain_rules_count=certain_up,
+            effective_rules_count=effective_rules,
+            certain_rules_count=certain_total,
+            base_rate_high=base_high,
+            base_rate_low=base_low,
         )
 
     # --- 退避ラダー: judged_phase と STRATEGY から実際の戦略を選び、

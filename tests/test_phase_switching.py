@@ -76,13 +76,13 @@ def test_t19_zero_table_is_coverage():
 
 def test_t20_below_similarity_min_is_coverage():
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=29, gamma=1.0)
+    rc.put(_rules(), decision_table_size=29, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     assert _run(_req(), settings=_settings(), rule_cache=rc, snapshot_cache=_neighbours()).phase == "COVERAGE"
 
 
 def test_t21_exactly_similarity_min_is_similarity():
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=30, gamma=1.0)
+    rc.put(_rules(), decision_table_size=30, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     resp = _run(_req(), settings=_settings(), rule_cache=rc, snapshot_cache=_neighbours())
     assert resp.phase == "SIMILARITY"
 
@@ -92,14 +92,14 @@ def test_t21_exactly_similarity_min_is_similarity():
 # --------------------------------------------------------------------------- #
 def test_t22_drsa_min_with_gate_passed_is_drsa():
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=80, gamma=1.0)
+    rc.put(_rules(), decision_table_size=80, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     resp = _run(_req(), settings=_settings(drsa_min_rules=1), rule_cache=rc, snapshot_cache=_neighbours())
     assert resp.phase == "DRSA"
 
 
 def test_t23_drsa_min_but_gate_failed_is_similarity():
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=80, gamma=0.1)  # γ ゲート不通過
+    rc.put(_rules(), decision_table_size=80, gamma=0.1, base_rate_high=0.5, base_rate_low=0.5)  # γ ゲート不通過
     resp = _run(_req(), settings=_settings(drsa_min_rules=1), rule_cache=rc, snapshot_cache=_neighbours())
     assert resp.phase == "SIMILARITY"
 
@@ -113,7 +113,7 @@ def test_t24_grows_through_all_three_phases():
     seen = []
     for size in (0, 10, 30, 45, 60, 90):
         if size:
-            rc.put(_rules(), decision_table_size=size, gamma=1.0)
+            rc.put(_rules(), decision_table_size=size, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
         seen.append(_run(_req(), settings=s, rule_cache=rc, snapshot_cache=sc).phase)
     assert seen[0] == "COVERAGE"
     assert "SIMILARITY" in seen
@@ -126,9 +126,9 @@ def test_t24_grows_through_all_three_phases():
 def test_t25_shrinking_table_does_not_raise():
     rc, sc = RuleCache(), _neighbours()
     s = _settings(drsa_min_rules=1)
-    rc.put(_rules(), decision_table_size=90, gamma=1.0)
+    rc.put(_rules(), decision_table_size=90, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     assert _run(_req(), settings=s, rule_cache=rc, snapshot_cache=sc).phase == "DRSA"
-    rc.put(_rules(), decision_table_size=5, gamma=1.0)  # 縮んだ
+    rc.put(_rules(), decision_table_size=5, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)  # 縮んだ
     assert _run(_req(), settings=s, rule_cache=rc, snapshot_cache=sc).phase == "COVERAGE"
 
 
@@ -213,7 +213,7 @@ def test_t31_budget_exceeded_falls_to_coverage():
 def test_t31_recommend_returns_200_even_with_zero_budget(client):
     # end-to-end: 予算 0 でも 200 / COVERAGE
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=40, gamma=1.0)
+    rc.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     r = client.post("/recommend/cells", json={
         "user_id": "u1", "cell_count": 2,
         "candidate_booths": [{"booth_id": "b1", "category_id": "hi", "visitor_count": 1}],
@@ -225,7 +225,7 @@ def test_t31_recommend_returns_200_even_with_zero_budget(client):
 def test_t32_phase_reflects_actual_not_judged():
     # judged=SIMILARITY（size 40）だが snapshot 無し → 実際は COVERAGE
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=40, gamma=1.0)
+    rc.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     resp = _run(_req(), settings=_settings(), rule_cache=rc, snapshot_cache=None)
     assert resp.phase == "COVERAGE"  # 判定結果(SIMILARITY)ではない
 
@@ -259,7 +259,7 @@ def test_t41_no_popularity_regression_in_similarity_and_drsa():
 
     rc = RuleCache()
     for phase, size in (("SIMILARITY", 40), ("DRSA", 90)):
-        rc.put(_rules(), decision_table_size=size, gamma=1.0)
+        rc.put(_rules(), decision_table_size=size, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
         resp = _run(req, settings=_settings(drsa_min_rules=1), rule_cache=rc, snapshot_cache=sc)
         assert resp.phase == phase
         by_id = {s.booth_id: s.score for s in resp.scores}
@@ -269,7 +269,7 @@ def test_t41_no_popularity_regression_in_similarity_and_drsa():
 
 def test_t33_fallback_reason_in_log(capsys):
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=40, gamma=1.0)
+    rc.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     _run(_req(), settings=_settings(), rule_cache=rc, snapshot_cache=None)
     recs = [json.loads(l) for l in capsys.readouterr().out.splitlines() if '"kind":"recommend"' in l]
     assert recs

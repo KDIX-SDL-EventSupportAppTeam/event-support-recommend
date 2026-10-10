@@ -107,7 +107,12 @@ async def ops_state(request: Request) -> dict:
         gate_stats = {
             "size": last_gate.size,
             "gamma": last_gate.gamma,
-            "rules": last_gate.certain_rules_count,
+            # ゲートが数えた有効な確実規則（上下合わせ・リフト条件つき）。生の本数は certain_rules
+            "rules": last_gate.effective_rules_count,
+            "certain_rules": last_gate.certain_rules_count,
+            "base_rate_high": last_gate.base_rate_high,
+            "base_rate_low": last_gate.base_rate_low,
+            "min_lift": s.drsa_min_lift,
         }
     else:
         judged_value = None
@@ -133,6 +138,8 @@ async def ops_state(request: Request) -> dict:
             "count_certain_up": rules_state["count_certain_up"],
             "count_certain_down": rules_state["count_certain_down"],
             "gamma": rules_state["gamma"],
+            "base_rate_high": rules_state["base_rate_high"],
+            "base_rate_low": rules_state["base_rate_low"],
             "candidate_coverage": candidate_coverage,
             "consistency_level": rules_state["consistency_level"] or s.drsa_consistency,
         },
