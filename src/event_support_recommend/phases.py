@@ -113,18 +113,19 @@ def decide_phase(
     """決定表の件数から判定フェーズを返す。
 
     - None / 負数 / NaN / 0 …… COVERAGE（例外を投げない）
-    - < PHASE_SIMILARITY_MIN …… COVERAGE
-    - < PHASE_DRSA_MIN …………… SIMILARITY
-    - >= PHASE_DRSA_MIN ………… 品質ゲート通過なら DRSA、そうでなければ SIMILARITY
+    - < PHASE_DRSA_MIN …………… COVERAGE
+    - >= PHASE_DRSA_MIN ………… 品質ゲート通過なら DRSA、そうでなければ COVERAGE
+
+    自動モードの段階は「ランダム → DRSA」(ADR 0010)。SIMILARITY は返さない
+    （契約の phase は 3 値のままで、ランダム期は COVERAGE として記録される）。
+    `PHASE_SIMILARITY_MIN` は自動モードでは使わない。
 
     ここが返すのは「判定結果」。実際に使えた戦略は退避のあとで決まる
     (docs/specs/04-strategies.md §5)。
     """
     size = _finite_int(decision_table_size)
-    if size is None or size < settings.phase_similarity_min:
+    if size is None or size < settings.phase_drsa_min:
         return Phase.COVERAGE
-    if size < settings.phase_drsa_min:
-        return Phase.SIMILARITY
     if gate is not None and gate.passed:
         return Phase.DRSA
-    return Phase.SIMILARITY
+    return Phase.COVERAGE

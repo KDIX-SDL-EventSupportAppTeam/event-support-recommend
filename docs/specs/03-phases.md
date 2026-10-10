@@ -230,20 +230,21 @@ DRSA へ昇格する条件（AND）
 
 ## 6. テストで固定すること
 
-> 以下の境界値は `PHASE_SIMILARITY_MIN` を使う判定関数（`decide_phase`）の単体の性質である。
-> 自動モードではこの関数の `SIMILARITY` を戦略選択に使わない（`strategies/registry.py`）。
+> `decide_phase` は自動モードでは `COVERAGE`（ランダム）と `DRSA` しか返さない。
+> `PHASE_SIMILARITY_MIN` は使われない（`strategies/registry.py` の自動ラダーにも入らない）。
 
 境界値は純関数として固定する。
 
 | 入力 | 期待 |
 |---|---|
 | 29 | `COVERAGE` |
-| 30 | `SIMILARITY` |
-| 59 | `SIMILARITY` |
-| 60 | `DRSA` |
+| 30 | `COVERAGE`（`SIMILARITY` を使わない） |
+| 59 | `COVERAGE` |
+| 60（ゲート通過） | `DRSA` |
+| 60（ゲート不通過） | `COVERAGE`（ランダムに留まる） |
 | 0 | `COVERAGE`（例外を投げない） |
 | 負数・NaN・None | `COVERAGE`（例外を投げない） |
-| しきい値を設定で変更 | 即座に反映される |
+| `PHASE_DRSA_MIN` を設定で変更 | 即座に反映される。`PHASE_SIMILARITY_MIN` は結果に影響しない |
 | `ENABLED_ATTRIBUTES` に3個目を足す | `PHASE_DRSA_MIN` の既定が 180 になる |
 
 **品質ゲート（§3.3）**
