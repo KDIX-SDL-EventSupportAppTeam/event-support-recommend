@@ -21,9 +21,9 @@ def s(**over) -> Settings:
     "size,expected",
     [
         (29, Phase.COVERAGE),
-        (30, Phase.SIMILARITY),
-        (59, Phase.SIMILARITY),
-        (60, Phase.SIMILARITY),  # 件数は足りるが gate 未通過 -> SIMILARITY に留まる
+        (30, Phase.COVERAGE),  # 自動モードは SIMILARITY を使わない (ADR 0010)
+        (59, Phase.COVERAGE),
+        (60, Phase.COVERAGE),  # 件数は足りるが gate 未通過 -> ランダム(COVERAGE)に留まる
         (0, Phase.COVERAGE),
         (-5, Phase.COVERAGE),
         (None, Phase.COVERAGE),
@@ -35,8 +35,16 @@ def test_boundary_values(size, expected):
 
 
 def test_threshold_is_configurable():
-    assert decide_phase(45, s(phase_similarity_min=50)) is Phase.COVERAGE
-    assert decide_phase(45, s(phase_similarity_min=40)) is Phase.SIMILARITY
+    ok = evaluate_quality_gate(60, 2, 0.6, 0.6, s())
+    assert decide_phase(70, s(phase_drsa_min=80), gate=ok) is Phase.COVERAGE
+    assert decide_phase(70, s(phase_drsa_min=70), gate=ok) is Phase.DRSA
+
+
+def test_similarity_min_is_unused_in_auto_mode():
+    ok = evaluate_quality_gate(60, 2, 0.6, 0.6, s())
+    for sim_min in (0, 30, 59, 9999):
+        assert decide_phase(45, s(phase_similarity_min=sim_min)) is Phase.COVERAGE
+        assert decide_phase(60, s(phase_similarity_min=sim_min), gate=ok) is Phase.DRSA
 
 
 def test_gate_all_pass_promotes_to_drsa():
@@ -53,10 +61,10 @@ def test_gate_all_pass_promotes_to_drsa():
         (2, 0.6, 0.3),  # 被覆率不足
     ],
 )
-def test_gate_any_missing_stays_similarity(rules, gamma, cov):
+def test_gate_any_missing_stays_random(rules, gamma, cov):
     gate = evaluate_quality_gate(60, rules, gamma, cov, s())
     assert gate.passed is False
-    assert decide_phase(60, s(), gate=gate) is Phase.SIMILARITY
+    assert decide_phase(60, s(), gate=gate) is Phase.COVERAGE  # ランダムに留まる
 
 
 def test_gate_detail_is_itemised():

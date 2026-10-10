@@ -5,11 +5,14 @@
 
 | 値 | 意味 |
 |---|---|
-| `auto`（既定） | フェーズ判定に従う。段3・4 結線後はこれが実際に機能する |
-| `coverage` | COVERAGE に固定 |
-| `similarity` | SIMILARITY に固定。実行できなければ COVERAGE へ退避 |
-| `drsa` | DRSA に固定。実行できなければラダーを下る |
-| `random` | RANDOM に固定。`APP_ENV=production` では `auto` に落とす（従来どおり） |
+| `auto`（既定） | フェーズ判定に従う。ゲート不通過は RANDOM、通過後は DRSA（使えなければ RANDOM） |
+| `coverage` | COVERAGE（訪問者が少ない順）に固定。**自動モードでは使わない**戦略を明示するときだけ |
+| `similarity` | SIMILARITY に固定。同上。実行できなければ COVERAGE へ退避 |
+| `drsa` | DRSA に固定。実行できなければ RANDOM へ退避 |
+| `random` | RANDOM に固定。`APP_ENV=production` では `auto` に落とす（自動モードのランダム期とは別物） |
+
+自動モードの段階（ADR 0010）: `COVERAGE` 期（ゲート不通過）→ `[RANDOM]`、`DRSA` 判定 → `[DRSA, RANDOM]`。
+**SIMILARITY と COVERAGE は自動モードで使わない。**
 
 **当日はこれを触らない**（ADR 0009）。障害時に COVERAGE へ固定するための逃げ道。
 未知の値は例外にせず `auto` として扱う。
@@ -31,27 +34,33 @@ _CTORS: dict[str, type] = {
     "random": RandomStrategy,
 }
 
-# 判定フェーズ → 試す順（04-strategies.md §5 の退避ラダー）。末尾は必ず coverage。
-_PHASE_LADDER: dict[str, tuple[str, ...]] = {
-    Phase.COVERAGE.value: ("coverage",),
-    Phase.SIMILARITY.value: ("similarity", "coverage"),
-    Phase.DRSA.value: ("drsa", "similarity", "coverage"),
+# 自動モード: 判定フェーズ → 試す順（04-strategies.md §5 の退避ラダー）。末尾は必ず random。
+# SIMILARITY / COVERAGE は入れない (ADR 0010)。
+_AUTO_LADDER: dict[str, tuple[str, ...]] = {
+    Phase.COVERAGE.value: ("random",),
+    Phase.SIMILARITY.value: ("random",),  # decide_phase は返さないが、来ても使わない
+    Phase.DRSA.value: ("drsa", "random"),
 }
-_FIXED_START = {"coverage": Phase.COVERAGE, "similarity": Phase.SIMILARITY, "drsa": Phase.DRSA}
+# STRATEGY で明示したときのラダー。coverage / similarity は明示したときだけ使える。
+_PINNED_LADDER: dict[str, tuple[str, ...]] = {
+    "coverage": ("coverage",),
+    "similarity": ("similarity", "coverage"),
+    "drsa": ("drsa", "random"),
+}
 
 
 def resolve_strategy(name: str | None, *, is_production: bool) -> tuple[Strategy, str | None]:
     """(戦略インスタンス, 警告文字列 or None)。警告は起動ログの `startup.strategy_note`。"""
     raw = (name or "auto").strip().lower()
     if raw == "random" and is_production:
-        return CoverageStrategy(), (
+        return RandomStrategy(), (
             "STRATEGY=random is refused in production (research data protection); using auto"
         )
     if raw in ("", "auto"):
-        return CoverageStrategy(), None
+        return RandomStrategy(), None
     cls = _CTORS.get(raw)
     if cls is None:
-        return CoverageStrategy(), f"unknown STRATEGY={name!r}; falling back to auto"
+        return RandomStrategy(), f"unknown STRATEGY={name!r}; falling back to auto"
     note = None
     if raw in ("similarity", "drsa"):
         note = f"STRATEGY={raw} pinned; falls back down the ladder when it cannot run"
@@ -61,18 +70,19 @@ def resolve_strategy(name: str | None, *, is_production: bool) -> tuple[Strategy
 def build_ladder(
     name: str | None, judged_phase: Phase, *, is_production: bool
 ) -> list[Strategy]:
-    """試す順に並べた戦略インスタンスのリスト。末尾は必ず COVERAGE（必ず成功する）。"""
+    """試す順に並べた戦略インスタンスのリスト。
+
+    自動モードの末尾は必ず RANDOM（候補だけで動くので必ず成功する）。
+    本番で `STRATEGY=random` が指定されても拒否して自動モードとして扱う。
+    """
     raw = (name or "auto").strip().lower()
 
-    if raw == "random":
-        if is_production:
-            return [CoverageStrategy()]
-        return [RandomStrategy(), CoverageStrategy()]
-
-    if raw in _FIXED_START:
-        keys = _PHASE_LADDER[_FIXED_START[raw].value]
-    else:  # auto / 未知 → 判定に従う
-        keys = _PHASE_LADDER.get(judged_phase.value, ("coverage",))
+    if raw == "random" and not is_production:
+        return [RandomStrategy()]
+    if raw in _PINNED_LADDER:
+        keys = _PINNED_LADDER[raw]
+    else:  # auto / 未知 / 本番での random → 判定に従う
+        keys = _AUTO_LADDER.get(judged_phase.value, ("random",))
     return [_CTORS[k]() for k in keys]
 
 

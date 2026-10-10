@@ -1,7 +1,9 @@
-"""RANDOM（下限ベースライン）も人気順退化の禁止テストを通す
-(docs/decisions/adrs/0007-戦略の選択を環境変数で行う.md §2, docs/specs/07-testing.md §1)。
+"""RANDOM — 候補ごとに独立の一様乱数 (ADR 0010, docs/specs/04-strategies.md §2.1)。
 
-P-2（明確に負）は COVERAGE 限定なので対象外。P-1・P-3〜P-6 と S-1〜S-5 を固定する。
+固定する性質: 候補ごとに独立・シードで再現・候補全件・0 点にしない。
+人気順に退化しないこと（P-1）は test_popularity_guard.py でも多数の参加者で固定している。
+ADR 0007 の未決事項は「乱択性を採る」で決着した。P-6（同じ関心一致内は visitor_count 昇順）は
+RANDOM に課さない。
 """
 
 from __future__ import annotations
@@ -14,6 +16,9 @@ from event_support_recommend.api.schemas import RecommendRequest
 from event_support_recommend.cache import RuleCache
 from event_support_recommend.engine import run_recommendation
 from event_support_recommend.settings import Settings
+from event_support_recommend.strategies.random import random_score
+
+COUNTS = [2, 6, 11, 18, 27, 39, 52, 70, 95, 130]
 
 
 @pytest.fixture
@@ -32,45 +37,22 @@ def run_random():
     return _run
 
 
-def _req(uid: str, *, cell_count: int = 4) -> RecommendRequest:
-    return RecommendRequest.model_validate(
-        {
-            "user_id": uid,
-            "cell_count": cell_count,
-            "candidate_booths": [
-                {"booth_id": f"b{i}", "category_id": f"cat_{i % 4}", "visitor_count": v}
-                for i, v in enumerate([2, 6, 11, 18, 27, 39, 52, 70, 95, 130])
-            ],
-            "pre_survey": {"interest_categories": ["cat_0", "cat_1"], "top_interest_category": "cat_0"},
-        }
-    )
+def _req(uid: str, *, cell_count: int = 4, ids=range(10), unlock: str | None = None) -> RecommendRequest:
+    body = {
+        "user_id": uid,
+        "cell_count": cell_count,
+        "candidate_booths": [
+            {"booth_id": f"b{i}", "category_id": f"cat_{i % 4}", "visitor_count": COUNTS[i]} for i in ids
+        ],
+        "pre_survey": {"interest_categories": ["cat_0", "cat_1"], "top_interest_category": "cat_0"},
+    }
+    if unlock is not None:
+        body["unlock_context"] = unlock
+    return RecommendRequest.model_validate(body)
 
 
-def _vc(s) -> int:
-    return s.attributes["raw"]["visitor_count"]
-
-
-def _spearman(xs, ys) -> float:
-    def ranks(v):
-        order = sorted(range(len(v)), key=lambda i: v[i])
-        r = [0.0] * len(v)
-        i = 0
-        while i < len(v):
-            j = i
-            while j + 1 < len(v) and v[order[j + 1]] == v[order[i]]:
-                j += 1
-            for k in range(i, j + 1):
-                r[order[k]] = (i + j) / 2 + 1
-            i = j + 1
-        return r
-
-    rx, ry = ranks(xs), ranks(ys)
-    n = len(xs)
-    mx, my = sum(rx) / n, sum(ry) / n
-    cov = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
-    sx = sum((a - mx) ** 2 for a in rx) ** 0.5
-    sy = sum((b - my) ** 2 for b in ry) ** 0.5
-    return cov / (sx * sy) if sx and sy else 0.0
+def _by_id(resp):
+    return {s.booth_id: s.score for s in resp.scores}
 
 
 def test_s1_returns_every_candidate(run_random):
@@ -78,88 +60,41 @@ def test_s1_returns_every_candidate(run_random):
     assert len(resp.scores) == 10
 
 
-def test_s3_p3_outlier_popular_booth_not_first_assigned(run_random):
-    req = RecommendRequest.model_validate(
-        {
-            "user_id": "u1",
-            "cell_count": 4,
-            "candidate_booths": [
-                {"booth_id": "pop", "category_id": "cat_0", "visitor_count": 9999},
-                {"booth_id": "b1", "category_id": "cat_0", "visitor_count": 2},
-                {"booth_id": "b2", "category_id": "cat_0", "visitor_count": 4},
-                {"booth_id": "b3", "category_id": "cat_0", "visitor_count": 6},
-            ],
-            "pre_survey": {"interest_categories": ["cat_0"], "top_interest_category": "cat_0"},
-        }
-    )
-    # 全候補が同じ interest_match（MATCH）→ クラス内は visitor_count 昇順。人気は末尾。
-    assert run_random(req).assigned[0].booth_id != "pop"
+def test_scores_are_uniform_not_stuck_to_a_few_values(run_random):
+    # 旧実装は interest_match の4区分ごとに1つの値（高々4種類）。候補ごとに別の値になること
+    scores = [s.score for s in run_random(_req("u1")).scores]
+    assert len(set(scores)) == len(scores)
+    allv = [s.score for i in range(100) for s in run_random(_req(f"u{i}")).scores]
+    assert 0.4 < statistics.mean(allv) < 0.6  # 一様乱数なら 0.5
+    assert min(allv) < 0.05 and max(allv) > 0.95
 
 
-def test_p1_score_visitor_correlation_is_not_systematically_positive(run_random):
-    rhos = []
-    for i in range(60):
-        resp = run_random(_req(f"user_{i}"))
-        rhos.append(_spearman([s.score for s in resp.scores], [_vc(s) for s in resp.scores]))
-    # P-1: 系統的な正の相関が無いこと。個々の参加者では正になりうる（クラス序列が
-    # たまたま人気順と揃う場合）ので、平均で見る。
-    assert statistics.mean(rhos) <= 0.1, statistics.mean(rhos)
+def test_each_candidate_is_independent_of_the_others(run_random):
+    full = _by_id(run_random(_req("u1")))
+    subset = _by_id(run_random(_req("u1", ids=[1, 4, 7])))
+    reordered = _by_id(run_random(_req("u1", ids=list(reversed(range(10))))))
+    for bid, score in subset.items():
+        assert score == full[bid]  # 他の候補が居なくても、その候補の値は変わらない
+    assert reordered == full  # 並びを変えても変わらない
 
 
-def test_p4_different_participants_get_different_recommendations(run_random):
-    """属性が違えば結果が違う (P-4)。候補の interest_match が複数クラスに分かれる場合。"""
-    seen = {tuple(x.booth_id for x in run_random(_req(f"u{i}")).assigned) for i in range(8)}
-    assert len(seen) > 1  # 全員同じにはならない
+def test_same_input_is_reproducible_and_seed_varies_by_user_and_unlock(run_random):
+    a = run_random(_req("u1", unlock="card1:2"))
+    b = run_random(_req("u1", unlock="card1:2"))
+    assert _by_id(a) == _by_id(b)
+    assert [x.booth_id for x in a.assigned] == [x.booth_id for x in b.assigned]
+    assert _by_id(run_random(_req("u2", unlock="card1:2"))) != _by_id(a)  # 参加者ごとにばらける
+    assert _by_id(run_random(_req("u1", unlock="card1:4"))) != _by_id(a)  # 解放ごとにばらける
 
 
-def test_single_interest_class_input_is_participant_invariant_like_coverage():
-    """**既知の限界。** 候補の interest_match が1クラスしか無い入力では、
-    クラス内が同点になり順序が visitor_count 昇順だけで決まるため、
-    全参加者に同じ推薦が返る。
-
-    これは RANDOM 固有の欠陥ではなく **COVERAGE も全く同じ**であり
-    （`pre_survey=null` は 07-testing §3 で「開場直後の常態」、
-    demo シナリオ ② は rank が visitor_count 昇順に完全一致することを期待値としている）、
-    P-4 の「属性が違えば結果が違う」は満たしている（この入力では属性が違わない）。
-
-    ただし ADR 0007 §2 が RANDOM に期待する「下限ベースライン」としては弱い。
-    P-6 と両立しないこの点は未決定事項として docs/README.md に記録した。
-    ここでは**現在の挙動を可視化して固定する**（黙って劣化させないため）。
-    """
-    tied = {
-        "user_id": "PLACEHOLDER",
-        "cell_count": 4,
-        "candidate_booths": [
-            {"booth_id": f"b{i}", "category_id": "cat_x", "visitor_count": v}
-            for i, v in enumerate([2, 6, 11, 18, 27, 39, 52, 70, 95, 130])
-        ],
-        "pre_survey": None,
-    }
-
-    def assigned_for(strategy: str) -> set[tuple[str, ...]]:
-        s = Settings(
-            _env_file=None,
-            enabled_attributes=["preference_match", "rating_affinity"],
-            strategy=strategy,
-            ops_token="",
-        )
-        return {
-            tuple(
-                a.booth_id
-                for a in run_recommendation(
-                    RecommendRequest.model_validate({**tied, "user_id": f"u{i}"}),
-                    settings=s,
-                    rule_cache=RuleCache(),
-                ).assigned
-            )
-            for i in range(20)
-        }
-
-    assert len(assigned_for("random")) == 1
-    assert assigned_for("random") == assigned_for("coverage")  # COVERAGE と同じ挙動
+def test_random_score_function_is_pure_and_in_range():
+    assert random_score("u", "ctx", "b1") == random_score("u", "ctx", "b1")
+    assert random_score("u", "ctx", "b1") != random_score("u", "ctx", "b2")
+    for i in range(500):
+        assert 0.0 < random_score(f"u{i}", "ctx", "b") <= 1.0
 
 
-def test_p5_mismatch_score_is_not_zero(run_random):
+def test_p5_never_zero_even_for_mismatch(run_random):
     req = RecommendRequest.model_validate(
         {
             "user_id": "u1",
@@ -170,26 +105,53 @@ def test_p5_mismatch_score_is_not_zero(run_random):
     )
     s = run_random(req).scores[0]
     assert s.interest_match == "MISMATCH"
-    assert s.score >= 0.05
+    assert s.score > 0.0
+    assert all(x.score > 0.0 for i in range(50) for x in run_random(_req(f"u{i}")).scores)
 
 
-def test_p6_same_interest_match_sorted_by_visitor_count_asc(run_random):
-    for uid in [f"u{i}" for i in range(20)]:
-        resp = run_random(_req(uid))
-        by_class: dict[str, list] = {}
-        for s in resp.scores:
-            by_class.setdefault(s.interest_match, []).append(s)
-        for group in by_class.values():
-            ordered = sorted(group, key=lambda s: s.rank)
-            vcs = [_vc(s) for s in ordered]
-            assert vcs == sorted(vcs), (uid, vcs)
+def test_ignores_visitor_count_and_interest_match(run_random):
+    """同じ候補 ID・同じ参加者なら、visitor_count や関心一致を変えても値は同じ（人気も関心も見ていない）。"""
+    base = _by_id(run_random(_req("u1")))
+    req = RecommendRequest.model_validate(
+        {
+            "user_id": "u1",
+            "cell_count": 4,
+            "candidate_booths": [
+                {"booth_id": f"b{i}", "category_id": "cat_other", "visitor_count": 9999 - i}
+                for i in range(10)
+            ],
+            "pre_survey": None,
+        }
+    )
+    assert _by_id(run_random(req)) == base
 
 
-def test_e1_reproducible(run_random):
-    a = run_random(_req("u1"))
-    b = run_random(_req("u1"))
-    assert [(s.booth_id, s.score) for s in a.scores] == [(s.booth_id, s.score) for s in b.scores]
-    assert [x.booth_id for x in a.assigned] == [x.booth_id for x in b.assigned]
+def test_independent_candidates_are_not_systematically_popularity_ordered(run_random):
+    """P-1: 系統的な正の相関が無い。個々の参加者では揺れるので多数で見る。"""
+    from scipy.stats import spearmanr
+
+    rhos = []
+    for i in range(200):
+        resp = run_random(_req(f"user_{i}"))
+        rho, _ = spearmanr([s.score for s in resp.scores], [s.attributes["raw"]["visitor_count"] for s in resp.scores])
+        rhos.append(float(rho))
+    assert abs(statistics.mean(rhos)) <= 0.1
+
+
+def test_single_interest_class_input_still_varies_across_participants(run_random):
+    """旧実装は候補の関心一致が1クラスだと全員同じ並び（visitor_count 昇順）になった。いまは参加者ごとに変わる。"""
+    tied = {
+        "cell_count": 4,
+        "candidate_booths": [
+            {"booth_id": f"b{i}", "category_id": "cat_x", "visitor_count": v} for i, v in enumerate(COUNTS)
+        ],
+        "pre_survey": None,
+    }
+    seen = {
+        tuple(a.booth_id for a in run_random(RecommendRequest.model_validate({**tied, "user_id": f"u{i}"})).assigned)
+        for i in range(20)
+    }
+    assert len(seen) > 5
 
 
 def test_log_carries_strategy_field(run_random, capsys):

@@ -98,9 +98,13 @@ def effective_params(overrides: dict | None = None) -> dict:
 def _settings(overrides: dict | None = None) -> Settings:
     o = sanitize_overrides(overrides)
     kwargs = {k: v for k, v in o.items() if k in _SETTINGS_KEYS}
+    # この画面が調整・検証するのは COVERAGE のスコア（重み・interest_mismatch の床）。
+    # 自動モードの序盤は RANDOM になった (ADR 0010) が、COVERAGE は STRATEGY=coverage で
+    # 明示すれば今も使える戦略なので、ここでは固定して見る。
     return Settings(
         _env_file=None,
         enabled_attributes=["preference_match", "rating_affinity"],
+        strategy="coverage",
         **kwargs,
     )
 
