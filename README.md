@@ -126,9 +126,13 @@ POST /recommend/cells
 
 | フェーズ | 条件 | 戦略 |
 |---|---|---|
-| `COVERAGE` | < 30 | 訪問者数が少ない順 ＋ 関心分野一致を優先 |
-| `SIMILARITY` | 30 以上 60 未満 | 属性が似た参加者が高評価したブース |
-| `DRSA` | 60 以上 | DRSA 規則による推薦 |
+| `COVERAGE`（契約上の名前。実際は**完全ランダム**） | 決定表 < 60 件、または品質ゲート不通過 | 候補ごとに独立の一様乱数（`reason.strategy = RANDOM`） |
+| `DRSA` | 60 件以上 かつ 品質ゲート通過 | DRSA 規則による推薦。使えなければ静かにランダムへ戻る |
+
+`SIMILARITY` と訪問者数が少ない順の `COVERAGE` は自動モードでは使わない（`STRATEGY` で明示したときだけ）。
+開くマスの半分は**関心外枠**で、1 マスごとに 30% は探索、残りはセレンディピティ規則 →
+採点順で選ぶ（`reason.strategy` は RANDOM / DRSA / SER / EXPLORE）。
+根拠は [ADR 0010](docs/decisions/adrs/0010-ランダムからDRSAとセレンディピティ規則へ切り替える.md)。
 
 しきい値は**設定値**であり、条件属性の個数に連動する
 （[docs/specs/03-phases.md](docs/specs/03-phases.md)）。

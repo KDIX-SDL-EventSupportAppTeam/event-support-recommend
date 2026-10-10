@@ -187,8 +187,8 @@ gcloud logging read → JSONL ファイル → event-support-analytics
 
 | 手段 | 効果 |
 |---|---|
-| `PHASE_DRSA_MIN` を極端に大きくする | DRSA を止めて SIMILARITY へ落とす |
-| `PHASE_SIMILARITY_MIN` も上げる | COVERAGE のみで運用する |
+| `PHASE_DRSA_MIN` を極端に大きくする | DRSA を止めてランダムへ落とす（ADR 0010） |
+| `READONLY_PROXY_URL` を空にして再デプロイ | 決定表が育たず、ランダムのみで運用する |
 | `RECOMMENDER_URL` を空にする（サーバー側） | 推薦を完全に切り離す。**最終手段** |
 
 **設定を変更したら、変更時刻を必ず記録する。**

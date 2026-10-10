@@ -42,13 +42,13 @@
 
 ### A-1 が最重要である理由
 
-段3・段4（スナップショット取得と `SIMILARITY` / `DRSA` の結線）は**実装済み**である。
+段3・段4（スナップショット取得と `DRSA` / セレンディピティ規則の結線）は**実装済み**である。
 しかし `READONLY_PROXY_URL` が空だと `build_repository()` が `UnavailableRepository` を返し
 （[repository.py](../src/event_support_recommend/data/repository.py) `build_repository`）、
 スナップショットの定期取得そのものが起動しない
 （[app.py](../src/event_support_recommend/api/app.py) の `snapshot_wired`）。
 
-結果として決定表が育たず、`decision_table_size` は永久に `null`、フェーズ判定は常に `COVERAGE` になる。
+結果として決定表が育たず、`decision_table_size` は永久に `null`、推薦は一日中ランダム（契約の `phase` は `COVERAGE`）になる。
 **実装は動いているのに設定だけで研究が1本に縮む**という、最も気づきにくい壊れ方をする。
 
 **確認方法**（当日朝、参加者の訪問が始まってから）:
@@ -197,7 +197,7 @@ gcloud logging read 'resource.type="cloud_run_revision"
 | 上げた直後 | 反映確認 | `gcloud run services describe $SERVICE --project=$PROJECT_ID --region=$REGION --format="value(spec.template.metadata.annotations.autoscaling\.knative\.dev/minScale)"` → `1` | |
 | 上げて 10 分後 | T-6/T-7: 放置後の応答時間 | `curl -s -o /dev/null -w "%{time_total}\n" -H "Content-Type: application/json" -d @docs/tests/runs/sample-request.json $SERVICE_URL/recommend/cells` → **1.000 未満** | |
 | 同時 | T-8: `/ops/state` が従来どおり応答 | 上の `/ops/state` が 200 | |
-| 開場後 | §3「見るもの」を 1 時間ごとに確認。`phase` が 15 時でも `COVERAGE` なら **A-1 を疑う。main は触らない** | `/ops/state` の `phase.current` | |
+| 開場後 | §3「見るもの」を 1 時間ごとに確認。`phase` が 15 時でも `COVERAGE` なら **A-1 を疑う。main は触らない**。DRSA に切り替わる目安は 12〜13 時（ローカルの合成 190 人で 12:00 前後）。`ser`（セレンディピティ規則の本数・`used`）も見る | `/ops/state` の `phase.current`・`ser` | |
 | 終了後 | `--min-instances=0` に戻す（O-6） | `gcloud run services update $SERVICE --project=$PROJECT_ID --region=$REGION --min-instances=0` | |
 | 終了後 | 当日 env の上書きがあれば手で消す。凍結解除（§9） | `gcloud run services describe … --format=yaml \| grep -n PHASE_` → 0 行 | |
 | 翌日 | 凍結が守られたかを機械判定 | `gh pr list --repo KDIX-SDL-EventSupportAppTeam/event-support-recommend --base main --state merged --search "merged:2026-10-16..2026-10-16" --json number` → `[]` | |
