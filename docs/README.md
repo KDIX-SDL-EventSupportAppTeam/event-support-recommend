@@ -54,6 +54,7 @@
 | [0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | 戦略の選択を環境変数（`STRATEGY`）で行う | 採用 |
 | [0008](decisions/adrs/0008-パラメータ調整画面の置き場所とデモログの分離.md) | `/demo` は推薦側に残し `OPS_TOKEN` で保護。デモ・リプレイのログを `kind` で分ける | 採用 |
 | [0009](decisions/adrs/0009-当日の切り替えは既定値のまま走らせ調整は事後に行う.md) | 当日は既定値のまま走らせ、パラメータ調整は事後に行う | 採用 |
+| [0010](decisions/adrs/0010-ランダムからDRSAとセレンディピティ規則へ切り替える.md) | 推薦方式を「ランダム → DRSA ＋ セレンディピティ規則」へ切り替える（2026-10-10 確定） | **採用** |
 
 ## 現在の状態
 
@@ -71,6 +72,18 @@
 | [06 の設問要求](specs/06-pre-survey-requirements.md) | サーバー側の承認待ち。**締切はアンケート配布日** |
 | [10-testing](specs/runtime-phase-switching/10-testing.md) の T-1〜T-48 | **消化状況が未確定。** テストは存在するが対応表が無い（[#29](https://github.com/KDIX-SDL-EventSupportAppTeam/event-support-recommend/issues/29)） |
 
+## 決定済み事項（2026-10-10 に確定 — [ADR 0010](decisions/adrs/0010-ランダムからDRSAとセレンディピティ規則へ切り替える.md)）
+
+下の項目は未決定の一覧から**ここへ移した**。値は ADR 0010 に根拠つきで書いてある。
+
+| 出典 | 項目 | 決定 |
+|---|---|---|
+| [09 RD-1](specs/09-research-design.md) | 参加者内ランダム化 | **実施しない**（当日の来場者数・データ量が読めず、枠を割ると研究に足るデータが取れない恐れ） |
+| [09 RD-2](specs/09-research-design.md) | 品質ゲートのしきい値 | 決定表 ≥ 60 件 ／ γ ≥ 0.5 ／ 被覆率 ≥ 0.5 ／ 確信度が基準率を 0.10 以上上回る確実規則が上下合わせて ≥ 2 本 |
+| [05-drsa D-1](specs/05-drsa.md) | `DRSA_CONSISTENCY` | **0.6**（旧 0.8）。高評価は★4 のみ |
+| [ADR 0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | `RANDOM` に P-6 を課すか | **乱択性を採る**（P-6 は課さない。候補ごとに独立の一様乱数） |
+| [03-phases](specs/03-phases.md) | しきい値 30 / 60 | 自動モードは「ランダム → DRSA」。`PHASE_DRSA_MIN=60` を採用し、`PHASE_SIMILARITY_MIN` は自動モードで使わない |
+
 ## 未決定事項の一覧
 
 決まるまで実装しないもの。**勝手に決めない。**
@@ -78,21 +91,17 @@
 **ただし、以下はすべて「今回は既定値のまま走らせる」と決めた**
 （[ADR 0009](decisions/adrs/0009-当日の切り替えは既定値のまま走らせ調整は事後に行う.md)）。
 未決定であることは変わらないので一覧からは外さない。値の検証は事後に行う。
+**新しい既定値（ADR 0010）は本番前に入れ、当日は触らない。**
 
 | 出典 | 項目 |
 |---|---|
-| [09 RD-1](specs/09-research-design.md) | **参加者内ランダム化を実施するか（実装着手前に決める）** |
-| [09 RD-2](specs/09-research-design.md) | 品質ゲートのしきい値（規則3本・γ 0.5・被覆率 0.5）。測定は [07 §8.1](specs/07-testing.md) の地図（`tools/build_prevalidation_map.py`）。決定は未 |
 | [09 RD-3](specs/09-research-design.md) | 去年ブースへのカテゴリ付与を行うか |
 | [11 D-7](specs/11-deployment.md) | **本番の `/demo` をブラウザから開く手段。** `X-Ops-Token` ヘッダを要求するがアドレス欄からは付けられない。クエリパラメータは URL とログに秘密が残るので採らない |
 | [11 D-8](specs/11-deployment.md) | パース失敗のログを `kind: "recommend"` のままにするか `recommend_error` へ分けるか（分析側の集計に影響する） |
-| [ADR 0007](decisions/adrs/0007-戦略の選択を環境変数で行う.md) | **`RANDOM` に P-6 を課すか、対照群としての乱択性を採るか。** ADR は両方を要求しているが両立しない（P-6 を守るとクラス内が同点になり、順位が `visitor_count` 昇順で決まって COVERAGE と同じ反人気バイアスが残る）。現状は ADR の明文どおり P-6 を優先。事前検証で下限として使う前に決める |
 | [02-features F-1](specs/02-features.md) | `exploration_disposition` を有効化するか |
 | [02-features F-2](specs/02-features.md) | `top_interest_category` の設問が採用されるか |
 | [02-features F-3](specs/02-features.md) | `booth_tags` を使うか |
-| [03-phases](specs/03-phases.md) | しきい値 30 / 60（正本は 30 / 180。属性個数に連動）。30/60 での規則の出方は [07 §8.1](specs/07-testing.md) の地図を参照。決定は未 |
 | [04-strategies T-1](specs/04-strategies.md) | `MAX_PER_CATEGORY` を有効化するか |
-| [05-drsa D-1](specs/05-drsa.md) | `DRSA_CONSISTENCY` の既定 0.8 |
 
 ## サーバー側へ差し戻した事項
 
