@@ -404,6 +404,8 @@ def refresh_caches(snapshot, *, settings, rule_cache: RuleCache, snapshot_cache:
             "base_rate_high": rate_high,
             "base_rate_low": rate_low,
             "ser_rules": len(ser_rules),
+            # 規則の一覧は毎回出す（無ければ空配列）。出現・消滅の時刻を事後に復元するため (#48)。
+            "ser_rule_list": [r.summary() for r in ser_rules],
             "ser_mismatch_rows": ser_rows,
             "global_mean": round(global_mean, 4),
         },

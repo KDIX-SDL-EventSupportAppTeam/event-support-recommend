@@ -235,3 +235,36 @@ def test_refresh_caches_stores_ser_rules_and_ops_state_shows_them(client):
 def test_ops_state_ser_empty_before_any_snapshot(client):
     ser = client.get("/ops/state").json()["ser"]
     assert ser["count"] == 0 and ser["mismatch_rows"] == 0 and ser["active"] is False
+
+
+def _snapshot_log_lines(capsys):
+    import json
+
+    out = capsys.readouterr().out
+    return [r for r in (json.loads(l) for l in out.splitlines() if l.startswith("{")) if r["kind"] == "snapshot"]
+
+
+def test_snapshot_log_has_ser_rule_list_when_rules_exist(capsys):
+    class Snap:
+        built = True
+        built_at = None
+        tables = _fan_scenario()
+
+    refresh_caches(Snap, settings=_settings(ser_min_rows=12), rule_cache=RuleCache(), snapshot_cache=SnapshotCache())
+    rec = [r for r in _snapshot_log_lines(capsys) if "ser_rule_list" in r][-1]
+    assert rec["ser_rules"] == 1 and len(rec["ser_rule_list"]) == 1
+    item = rec["ser_rule_list"][0]
+    assert set(item) == {"id", "top_category", "booth_category", "p", "n", "persons", "category_rate"}
+    assert not any(uid in str(rec["ser_rule_list"]) for uid in ("a0", "a1", "x0", "user_id", "person_id"))
+
+
+def test_snapshot_log_has_empty_ser_rule_list_when_no_rules(capsys):
+    class Snap:
+        built = True
+        built_at = None
+        tables = _fan_scenario()
+
+    # ser_min_rows が材料の件数を上回れば規則は 0 本。空配列で「無かった」ことを記録する。
+    refresh_caches(Snap, settings=_settings(ser_min_rows=10_000), rule_cache=RuleCache(), snapshot_cache=SnapshotCache())
+    rec = [r for r in _snapshot_log_lines(capsys) if "ser_rule_list" in r][-1]
+    assert rec["ser_rules"] == 0 and rec["ser_rule_list"] == []
