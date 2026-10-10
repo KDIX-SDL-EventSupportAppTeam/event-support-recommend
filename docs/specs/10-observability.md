@@ -161,6 +161,7 @@
 |---|---|
 | `ser_rules` | 規則の本数 |
 | `ser_rule_list` | `SerRule.summary()` の配列。規則が無いときは `[]`（「無かった」ことも記録する） |
+| `ser_rules_stale` | `true` なら、その回は規則の作成に失敗し、`ser_rule_list` は**前回の規則のまま**（推薦にも前回の規則が使われている）。事後分析で規則の出現時刻を数えるときは、`true` の行を「新しく作られた」と数えない |
 
 各要素は `id`・`top_category`・`booth_category`・`p`・`n`・`persons`・`category_rate`。
 **個人を特定する情報は入れない**（`persons` は人数のみ）。

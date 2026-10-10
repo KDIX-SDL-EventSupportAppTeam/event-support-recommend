@@ -268,3 +268,29 @@ def test_snapshot_log_has_empty_ser_rule_list_when_no_rules(capsys):
     refresh_caches(Snap, settings=_settings(ser_min_rows=10_000), rule_cache=RuleCache(), snapshot_cache=SnapshotCache())
     rec = [r for r in _snapshot_log_lines(capsys) if "ser_rule_list" in r][-1]
     assert rec["ser_rules"] == 0 and rec["ser_rule_list"] == []
+
+
+def test_snapshot_log_marks_ser_rules_stale_when_build_fails(capsys, monkeypatch):
+    """規則の作成に失敗した回は前回の規則を保ち、ログの同じ行に stale の印を残す。"""
+    import event_support_recommend.snapshot_build as sb
+
+    class Snap:
+        built = True
+        built_at = None
+        tables = _fan_scenario()
+
+    rc = RuleCache()
+    refresh_caches(Snap, settings=_settings(ser_min_rows=12), rule_cache=rc, snapshot_cache=SnapshotCache())
+    before = rc.ser_rules
+    assert len(before) == 1
+    ok = [r for r in _snapshot_log_lines(capsys) if "ser_rule_list" in r][-1]
+    assert ok["ser_rules_stale"] is False
+
+    def boom(*a, **k):
+        raise RuntimeError("ser build failed")
+
+    monkeypatch.setattr(sb, "build_serendipity_rules", boom)
+    refresh_caches(Snap, settings=_settings(ser_min_rows=12), rule_cache=rc, snapshot_cache=SnapshotCache())
+    assert rc.ser_rules == before  # 前回の規則が残る
+    rec = [r for r in _snapshot_log_lines(capsys) if "ser_rule_list" in r][-1]
+    assert rec["ser_rules_stale"] is True and len(rec["ser_rule_list"]) == 1

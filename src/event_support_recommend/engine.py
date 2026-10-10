@@ -245,9 +245,12 @@ def run_recommendation(
     cfg = _runtime_config(settings)
 
     # --- キャッシュ読み出し（リクエスト経路では生成も取得もしない, R-2）---
-    ruleset, rules_built_at = rule_cache.get()
-    decision_table_size = rule_cache.decision_table_size
-    gamma = rule_cache.gamma
+    # 更新は別スレッドで走る (#47)。項目ごとに読むと更新途中の組み合わせを読みうるので、
+    # 1 回のロックでまとめて写し、以降はこの写しだけを使う。
+    view = rule_cache.read()
+    ruleset, rules_built_at = view.ruleset, view.built_at
+    decision_table_size = view.decision_table_size
+    gamma = view.gamma
     snapshot_data = snapshot_cache.get() if snapshot_cache is not None else None
 
     try:
@@ -261,7 +264,7 @@ def run_recommendation(
 
     # --- 品質ゲート & フェーズ判定 ---
     certain_total = len(ruleset.certain_up) + len(ruleset.certain_down) if ruleset else 0
-    base_high, base_low = rule_cache.base_rates
+    base_high, base_low = view.base_rate_high, view.base_rate_low
     effective_rules = count_effective_rules(ruleset, base_high, base_low, settings.drsa_min_lift)
     candidate_coverage = 0.0
     if ruleset is not None and ruleset.rules:
@@ -323,7 +326,7 @@ def run_recommendation(
             exclude_booth_ids=ctx.request.exclude_booth_ids,
             max_per_category=cfg.max_per_category,
             top_category=ctx.participant.survey.top_interest_category,
-            ser_rules=rule_cache.ser_rules,
+            ser_rules=view.ser_rules,
             mm_quota=settings.mm_quota,
             explore_rate=settings.explore_rate,
         )

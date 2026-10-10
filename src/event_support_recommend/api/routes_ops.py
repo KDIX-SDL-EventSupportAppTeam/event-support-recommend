@@ -190,7 +190,10 @@ async def ops_rebuild(request: Request) -> dict:
     before = rc.decision_table_size
     try:
         snapshot = await asyncio.to_thread(repo.fetch, event_id)
-        refresh_caches(snapshot, settings=s, rule_cache=rc, snapshot_cache=sc)
+        # 定期更新と同じく別スレッドで組み立てる。イベントループ（/recommend）を止めない (#47)。
+        await asyncio.to_thread(
+            refresh_caches, snapshot, settings=s, rule_cache=rc, snapshot_cache=sc
+        )
     except Exception as exc:  # pragma: no cover - 防御。前回キャッシュは保持される
         return {"rebuilt": False, "reason": f"rebuild failed: {exc!r}",
                 "decision_table_size": before}

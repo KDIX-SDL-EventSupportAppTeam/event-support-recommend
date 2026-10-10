@@ -11,10 +11,29 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from ..drsa import RuleSet
 from ..rst import SerRule
+
+
+@dataclass(frozen=True)
+class RuleCacheView:
+    """ある時点のキャッシュの中身を丸ごと写したもの。1 回のロックで取る。
+
+    更新はバックグラウンドのスレッドで走る (#47)。項目ごとに別々に読むと、
+    「新しい規則」と「古い基準率」のような更新途中の組み合わせを読みうるので、
+    リクエスト経路は必ず `RuleCache.read()` で一度に読む。
+    """
+
+    ruleset: RuleSet | None
+    built_at: datetime | None
+    decision_table_size: int | None
+    gamma: float
+    base_rate_high: float | None
+    base_rate_low: float | None
+    ser_rules: tuple[SerRule, ...]
 
 
 class RuleCache:
@@ -41,6 +60,19 @@ class RuleCache:
     def get(self) -> tuple[RuleSet | None, datetime | None]:
         with self._lock:
             return self._ruleset, self._built_at
+
+    def read(self) -> RuleCacheView:
+        """全項目を 1 回のロックで読む。`put` の途中の状態は見えない。"""
+        with self._lock:
+            return RuleCacheView(
+                ruleset=self._ruleset,
+                built_at=self._built_at,
+                decision_table_size=self._decision_table_size,
+                gamma=self._gamma,
+                base_rate_high=self._base_rate_high,
+                base_rate_low=self._base_rate_low,
+                ser_rules=self._ser_rules,
+            )
 
     @property
     def gamma(self) -> float:
