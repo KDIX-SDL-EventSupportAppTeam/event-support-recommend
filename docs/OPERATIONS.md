@@ -103,7 +103,7 @@ GET /ops/state   （X-Ops-Token ヘッダが要る）
 | 現在フェーズ | `/ops/state` | 15時でも `COVERAGE` | 決定表が育っていない。**まず §1 A-1 を疑う** |
 | γ・**有効な確実規則の本数**（リフト 0.10 以上、上下合計） | `/ops/state`（`gate_detail`） | γ が低い / 有効規則 0〜1 本 | 品質ゲートが正しく止めている。**それでよい** |
 | **セレンディピティ規則の本数・使用状況** | `/ops/state`（`ser`） | 関心外の評価が 20 件を超えても 0 本 | 評価が集まっていない（推薦マスでの評価の依頼を確認）。**ゲートや規則の値は触らない** |
-| マスごとの strategy の内訳（RANDOM / DRSA / SER / EXPLORE） | ログ `kind=recommend`・`/ops/state` | 探索（EXPLORE）が 3 割から大きくずれる | 乱数・実装の異常を疑う（人気順の退化ではない） |
+| マスごとの strategy の内訳（RANDOM / DRSA / SER / EXPLORE） | ログ `kind=recommend`（`assigned_strategies`）・`/ops/state` の `ser.used.by_strategy` | 探索（EXPLORE）が 3 割から大きくずれる | 乱数・実装の異常を疑う（人気順の退化ではない） |
 | 応答時間 p95 | ダッシュボード | 600ms 超 | タイムアウト（1000ms）が近い |
 | **割当ブースの集中度** | ダッシュボード（DB） | 特定ブースに集中 | **人気順への退化。去年の失敗の再来** |
 
