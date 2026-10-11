@@ -14,6 +14,7 @@ from .attributes import (
     preference_match,
     rating_affinity,
 )
+from .history import history_signals
 from .interest_match import interest_match
 from .rating import classify_decision, is_high_rating, is_low_rating, normalize_rating
 
@@ -23,6 +24,7 @@ __all__ = [
     "condition_vector",
     "exploration_disposition",
     "free_visit_categories",
+    "history_signals",
     "preference_match",
     "rating_affinity",
     "interest_match",

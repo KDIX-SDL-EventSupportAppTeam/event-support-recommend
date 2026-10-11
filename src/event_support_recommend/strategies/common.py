@@ -31,27 +31,14 @@ def compute_candidate_features(ctx: RecommendationContext) -> dict[str, Candidat
     survey = ctx.participant.survey
     cfg = ctx.config
 
-    free_cats = features.free_visit_categories(ctx.participant.visits)
-
-    high_cats: set[str] = set()
-    low_cats: set[str] = set()
-    for r in ctx.participant.ratings:
-        if r.category_id is None:
-            continue
-        if features.is_high_rating(
-            r.rating,
-            r.rating_scale or ctx.request.rating_scale,
-            default_scale=cfg.rating_scale_default,
-            high_ratio=cfg.high_rating_ratio,
-        ):
-            high_cats.add(r.category_id)
-        if features.is_low_rating(
-            r.rating,
-            r.rating_scale or ctx.request.rating_scale,
-            default_scale=cfg.rating_scale_default,
-            low_ratio=cfg.low_rating_ratio,
-        ):
-            low_cats.add(r.category_id)
+    # 決定表 (snapshot_build.py) と同じ関数を通す。ここだけ別計算にしない。
+    free_cats, high_cats, low_cats = features.history_signals(
+        ctx.participant.visits,
+        default_scale=cfg.rating_scale_default,
+        high_ratio=cfg.high_rating_ratio,
+        low_ratio=cfg.low_rating_ratio,
+        request_scale=ctx.request.rating_scale,
+    )
 
     explore = features.exploration_disposition(survey)
 

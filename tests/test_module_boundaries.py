@@ -18,6 +18,10 @@ FORBIDDEN = {
     "drsa": ("fastapi", "starlette", "pydantic", "sqlalchemy", "httpx",
              "event_support_recommend.features", "event_support_recommend.strategies",
              "event_support_recommend.api", "event_support_recommend.data"),
+    "rst": ("fastapi", "starlette", "pydantic", "sqlalchemy", "httpx",
+            "event_support_recommend.features", "event_support_recommend.drsa",
+            "event_support_recommend.strategies", "event_support_recommend.api",
+            "event_support_recommend.data", "event_support_recommend.cache"),
     "strategies": ("fastapi", "starlette", "sqlalchemy", "httpx",
                    "event_support_recommend.api", "event_support_recommend.data"),
 }

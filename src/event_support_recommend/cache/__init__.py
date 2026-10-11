@@ -4,7 +4,7 @@
 リクエスト経路では絶対に生成しない。失敗時は前回の内容を保持し、空にしない。
 """
 
-from .rule_cache import RuleCache
+from .rule_cache import RuleCache, RuleCacheView
 from .snapshot_cache import SnapshotCache, SnapshotData
 
-__all__ = ["RuleCache", "SnapshotCache", "SnapshotData"]
+__all__ = ["RuleCache", "RuleCacheView", "SnapshotCache", "SnapshotData"]

@@ -98,7 +98,7 @@ def test_attributes_are_self_describing(client):
     body = client.post("/recommend/cells", json=_payload()).json()
     a = body["scores"][0]["attributes"]
     assert a["v"] == 1
-    assert a["strategy"] == "COVERAGE"
+    assert a["strategy"] == "RANDOM"  # 自動モードの序盤はランダム (ADR 0010)。契約の phase は COVERAGE
     assert a["enabled"] == ["preference_match", "rating_affinity"]
     assert "raw" in a and "visitor_count" in a["raw"]
     assert "condition" in a

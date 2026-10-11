@@ -50,13 +50,13 @@ def _clear_phase_tracker():
 # T-44: /ops/state の phase.current が実際に返した phase と一致
 # --------------------------------------------------------------------------- #
 def test_t44_ops_state_current_matches_returned_phase(client):
-    # 判定は SIMILARITY（size 40）だが snapshot 無し → 実際は COVERAGE。
-    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0)
+    # size 40 はまだゲート前（PHASE_DRSA_MIN=60）→ 判定も実際も COVERAGE（ランダム）。
+    client.app.state.rule_cache.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     r = client.post("/recommend/cells", json=_payload())
     returned = r.json()["phase"]
     state = client.get("/ops/state").json()
     assert state["phase"]["current"] == returned
-    assert state["phase"]["judged"] == "SIMILARITY"
+    assert state["phase"]["judged"] == "COVERAGE"
     assert returned == "COVERAGE"
 
 
@@ -132,18 +132,17 @@ def test_t48_phase_changed_emitted_on_transition(capsys):
     req = RecommendRequest.model_validate(_payload())
 
     run_recommendation(req, settings=s, rule_cache=rc, snapshot_cache=sc)          # COVERAGE
-    rc.put(_rules(), decision_table_size=40, gamma=1.0)
-    run_recommendation(req, settings=s, rule_cache=rc, snapshot_cache=sc)          # SIMILARITY
-    rc.put(_rules(), decision_table_size=90, gamma=1.0)
+    rc.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
+    run_recommendation(req, settings=s, rule_cache=rc, snapshot_cache=sc)          # まだ COVERAGE（ランダム）
+    rc.put(_rules(), decision_table_size=90, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     run_recommendation(req, settings=s, rule_cache=rc, snapshot_cache=sc)          # DRSA
 
     changes = [
         json.loads(l) for l in capsys.readouterr().out.splitlines()
         if '"kind":"phase_changed"' in l
     ]
-    assert len(changes) == 2
-    assert (changes[0]["from"], changes[0]["to"]) == ("COVERAGE", "SIMILARITY")
-    assert (changes[1]["from"], changes[1]["to"]) == ("SIMILARITY", "DRSA")
+    assert len(changes) == 1  # ランダム(COVERAGE) → DRSA。SIMILARITY は挟まない
+    assert (changes[0]["from"], changes[0]["to"]) == ("COVERAGE", "DRSA")
 
 
 def test_t48_no_phase_changed_when_stable(capsys):

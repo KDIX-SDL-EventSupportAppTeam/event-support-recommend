@@ -26,18 +26,21 @@
 [04-strategies.md](../04-strategies.md) §5 の定義をそのまま実装する。
 
 ```
-DRSA       ──規則が0本 / 規則キャッシュが未構築──▶ SIMILARITY
-SIMILARITY ──近傍が作れない / スナップショット無し──▶ COVERAGE
-COVERAGE   ────────────────────────────────────▶ 必ず成功する
+DRSA   ──規則が0本 / 規則キャッシュが未構築 / 例外──▶ RANDOM
+RANDOM ───────────────────────────────────────▶ 必ず成功する（候補だけで動く）
 ```
+
+**2026-10-10 の変更（[ADR 0010](../../decisions/adrs/0010-ランダムからDRSAとセレンディピティ規則へ切り替える.md)）**: 旧ラダー（DRSA → SIMILARITY → COVERAGE）の
+SIMILARITY と COVERAGE は**自動モードでは使わない**。`STRATEGY=coverage|similarity` で明示したときだけ使える。
+契約の `phase` は 3 値のままなので、ランダム期は `phase=COVERAGE`、実際の戦略は `reason.strategy`（RANDOM）で区別する。
 
 退避の条件を具体化する。
 
 | 判定 | 退避する条件 |
 |---|---|
-| DRSA → SIMILARITY | `RuleCache.ready` が false／規則0本／品質ゲート不通過／規則適用中の例外 |
-| SIMILARITY → COVERAGE | `SnapshotCache` 未構築／近傍が1人も作れない／事前アンケート未回答／実行中の例外 |
-| いずれ → COVERAGE | 実行時間が `RESPONSE_BUDGET_MS` を超えた（下記） |
+| DRSA → RANDOM | `RuleCache.ready` が false／規則0本／品質ゲート不通過／規則適用中の例外 |
+| （明示指定の SIMILARITY → COVERAGE） | `SnapshotCache` 未構築／近傍が1人も作れない／事前アンケート未回答／実行中の例外 |
+| DRSA → RANDOM | 実行時間が `RESPONSE_BUDGET_MS` を超えた（下記） |
 
 **退避したことは隠さない。** `phase` に実際の戦略が出るほか、JSONL ログに
 `judged_phase` と `actual_phase` の両方と、退避した理由を残す。

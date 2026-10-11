@@ -9,7 +9,7 @@
 3. [docs/rules/](docs/rules/README.md) — [契約](docs/rules/contract.md)・[実装](docs/rules/coding.md)・[データ](docs/rules/data-handling.md)・[文書](docs/rules/documentation.md)・[Git](docs/rules/git.md)
 4. [docs/README.md](docs/README.md) — 索引と**未決定事項の一覧**
 5. [docs/OPERATIONS.md](docs/OPERATIONS.md) — **当日の運用手引き。**
-   デプロイ・本番設定に触る作業ならこれも読む（`READONLY_PROXY_URL` 未設定だと `COVERAGE` 固定）
+   デプロイ・本番設定に触る作業ならこれも読む（`READONLY_PROXY_URL` 未設定だと一日ランダム固定。契約上の `phase` は `COVERAGE`）
 
 契約の正本は**このリポジトリに無い**。`event-support-server` の
 `docs/specs/bingo-dynamic-unlock/05-recommender/contract.md` を読むこと。
@@ -40,8 +40,8 @@
 - **`features/` は分析リポジトリが import する公開 API。** FastAPI・DB に依存させない
 - **段1〜段4 はすべて実装済み**（`features/` `drsa/` `data/` `cache/` `strategies/`）。
   残るリスクは実装ではなく**設定**で、`READONLY_PROXY_URL` が未設定だと決定表が育たず
-  一日 `COVERAGE` 固定になる（[OPERATIONS.md](docs/OPERATIONS.md) A-1）。
-  **「未実装だから COVERAGE」と誤読しないこと**
+  一日ランダム固定（契約上の `phase` は `COVERAGE`）になる（[OPERATIONS.md](docs/OPERATIONS.md) A-1）。
+  **「未実装だからランダム」と誤読しないこと**
 - テストは「起きてはいけないこと」から書く（[07](docs/specs/07-testing.md)）。
   最優先は**人気順になっていないこと**、次にフェーズ判定の境界値
 - コミット・PR は**日本語**（`種別(範囲): 要約`）。ただし**ブランチ名は半角英数字とハイフンのみ**（日本語不可）。

@@ -76,15 +76,17 @@ def test_t19_zero_table_is_coverage():
 
 def test_t20_below_similarity_min_is_coverage():
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=29, gamma=1.0)
+    rc.put(_rules(), decision_table_size=29, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     assert _run(_req(), settings=_settings(), rule_cache=rc, snapshot_cache=_neighbours()).phase == "COVERAGE"
 
 
-def test_t21_exactly_similarity_min_is_similarity():
+def test_t21_similarity_min_no_longer_leaves_random_in_auto_mode():
+    # ADR 0010: 自動モードは「ランダム → DRSA」。SIMILARITY は使わない。
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=30, gamma=1.0)
+    rc.put(_rules(), decision_table_size=30, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     resp = _run(_req(), settings=_settings(), rule_cache=rc, snapshot_cache=_neighbours())
-    assert resp.phase == "SIMILARITY"
+    assert resp.phase == "COVERAGE"  # 契約の phase は 3 値。ランダム期は COVERAGE
+    assert {s.reason["strategy"] for s in resp.scores} == {"RANDOM"}
 
 
 # --------------------------------------------------------------------------- #
@@ -92,52 +94,54 @@ def test_t21_exactly_similarity_min_is_similarity():
 # --------------------------------------------------------------------------- #
 def test_t22_drsa_min_with_gate_passed_is_drsa():
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=80, gamma=1.0)
+    rc.put(_rules(), decision_table_size=80, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     resp = _run(_req(), settings=_settings(drsa_min_rules=1), rule_cache=rc, snapshot_cache=_neighbours())
     assert resp.phase == "DRSA"
 
 
-def test_t23_drsa_min_but_gate_failed_is_similarity():
+def test_t23_drsa_min_but_gate_failed_stays_random():
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=80, gamma=0.1)  # γ ゲート不通過
+    rc.put(_rules(), decision_table_size=80, gamma=0.1, base_rate_high=0.5, base_rate_low=0.5)  # γ ゲート不通過
     resp = _run(_req(), settings=_settings(drsa_min_rules=1), rule_cache=rc, snapshot_cache=_neighbours())
-    assert resp.phase == "SIMILARITY"
+    assert resp.phase == "COVERAGE"
+    assert {s.reason["strategy"] for s in resp.scores} == {"RANDOM"}
 
 
 # --------------------------------------------------------------------------- #
-# T-24: 育てながら COVERAGE → SIMILARITY → DRSA と実際に切り替わる
+# T-24: 育てながら ランダム(COVERAGE) → DRSA と実際に切り替わる（SIMILARITY は挟まない）
 # --------------------------------------------------------------------------- #
-def test_t24_grows_through_all_three_phases():
+def test_t24_grows_from_random_to_drsa():
     rc, sc = RuleCache(), _neighbours()
     s = _settings(drsa_min_rules=1)
     seen = []
     for size in (0, 10, 30, 45, 60, 90):
         if size:
-            rc.put(_rules(), decision_table_size=size, gamma=1.0)
+            rc.put(_rules(), decision_table_size=size, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
         seen.append(_run(_req(), settings=s, rule_cache=rc, snapshot_cache=sc).phase)
     assert seen[0] == "COVERAGE"
-    assert "SIMILARITY" in seen
+    assert "SIMILARITY" not in seen
     assert seen[-1] == "DRSA"
     # 単調に上がっている（下がらない）
-    order = {"COVERAGE": 0, "SIMILARITY": 1, "DRSA": 2}
+    order = {"COVERAGE": 0, "DRSA": 1}
     assert [order[p] for p in seen] == sorted(order[p] for p in seen)
 
 
 def test_t25_shrinking_table_does_not_raise():
     rc, sc = RuleCache(), _neighbours()
     s = _settings(drsa_min_rules=1)
-    rc.put(_rules(), decision_table_size=90, gamma=1.0)
+    rc.put(_rules(), decision_table_size=90, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     assert _run(_req(), settings=s, rule_cache=rc, snapshot_cache=sc).phase == "DRSA"
-    rc.put(_rules(), decision_table_size=5, gamma=1.0)  # 縮んだ
+    rc.put(_rules(), decision_table_size=5, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)  # 縮んだ
     assert _run(_req(), settings=s, rule_cache=rc, snapshot_cache=sc).phase == "COVERAGE"
 
 
 # --------------------------------------------------------------------------- #
 # T-26〜T-29: 退避
 # --------------------------------------------------------------------------- #
-def test_t26_drsa_pinned_falls_to_similarity_when_no_rules():
+def test_t26_drsa_pinned_falls_to_random_when_no_rules():
     resp = _run(_req(), settings=_settings(strategy="drsa"), snapshot_cache=_neighbours())
-    assert resp.phase == "SIMILARITY"
+    assert resp.phase == "COVERAGE"  # DRSA が使えなければ静かにランダムへ（500 にしない）
+    assert {s.reason["strategy"] for s in resp.scores} == {"RANDOM"}
 
 
 def test_t27_similarity_pinned_falls_to_coverage_without_snapshot():
@@ -213,7 +217,7 @@ def test_t31_budget_exceeded_falls_to_coverage():
 def test_t31_recommend_returns_200_even_with_zero_budget(client):
     # end-to-end: 予算 0 でも 200 / COVERAGE
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=40, gamma=1.0)
+    rc.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
     r = client.post("/recommend/cells", json={
         "user_id": "u1", "cell_count": 2,
         "candidate_booths": [{"booth_id": "b1", "category_id": "hi", "visitor_count": 1}],
@@ -223,18 +227,19 @@ def test_t31_recommend_returns_200_even_with_zero_budget(client):
 
 
 def test_t32_phase_reflects_actual_not_judged():
-    # judged=SIMILARITY（size 40）だが snapshot 無し → 実際は COVERAGE
+    # STRATEGY=similarity を明示したが snapshot 無し → 実際は COVERAGE
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=40, gamma=1.0)
-    resp = _run(_req(), settings=_settings(), rule_cache=rc, snapshot_cache=None)
-    assert resp.phase == "COVERAGE"  # 判定結果(SIMILARITY)ではない
+    rc.put(_rules(), decision_table_size=40, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
+    resp = _run(_req(), settings=_settings(strategy="similarity"), rule_cache=rc, snapshot_cache=None)
+    assert resp.phase == "COVERAGE"  # 指定した戦略名(SIMILARITY)ではなく、実際に使えた戦略
 
 
 # --------------------------------------------------------------------------- #
 # T-33: 退避理由が JSONL に出る
 # --------------------------------------------------------------------------- #
-def test_t41_no_popularity_regression_in_similarity_and_drsa():
-    """全フェーズで score と visitor_count の順位相関が正にならない（S-2 / T-41）。"""
+def test_t41_no_popularity_regression_in_random_and_drsa():
+    """自動モードの全段階（ランダム期・DRSA 期）で、score と visitor_count の順位相関が正に大きくならない
+    （S-2 / T-41）。ランダム期は乱数なので 1 件では揺れる → 多数の参加者の平均で見る。"""
     from event_support_recommend.demo import spearman
 
     # 関心度の交絡を消すため全候補を同一カテゴリ（関心外）にし、visitor_count だけを変える。
@@ -258,23 +263,37 @@ def test_t41_no_popularity_regression_in_similarity_and_drsa():
            booth_category={f"b{j}": "out" for j in range(len(vc))}, global_mean=0.5)
 
     rc = RuleCache()
-    for phase, size in (("SIMILARITY", 40), ("DRSA", 90)):
-        rc.put(_rules(), decision_table_size=size, gamma=1.0)
-        resp = _run(req, settings=_settings(drsa_min_rules=1), rule_cache=rc, snapshot_cache=sc)
-        assert resp.phase == phase
-        by_id = {s.booth_id: s.score for s in resp.scores}
-        rho = spearman(vc, [by_id[f"b{i}"] for i in range(len(vc))])
-        assert rho <= 0.2, (phase, rho)
+    for phase, size in (("COVERAGE", 40), ("DRSA", 90)):
+        rc.put(_rules(), decision_table_size=size, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
+        rhos = []
+        for n in range(80):
+            r = RecommendRequest.model_validate({**req.model_dump(by_alias=True), "user_id": f"u{n}"})
+            resp = _run(r, settings=_settings(drsa_min_rules=1), rule_cache=rc, snapshot_cache=sc)
+            assert resp.phase == phase
+            by_id = {s.booth_id: s.score for s in resp.scores}
+            rhos.append(spearman(vc, [by_id[f"b{i}"] for i in range(len(vc))]))
+        assert sum(rhos) / len(rhos) <= 0.15, (phase, sum(rhos) / len(rhos))
 
 
-def test_t33_fallback_reason_in_log(capsys):
+def test_t33_fallback_reason_in_log(capsys, monkeypatch):
+    # 判定は DRSA（ゲート通過）だが、DRSA 戦略が使えない → ランダムへ静かに退避し、理由がログに残る
+    from event_support_recommend.strategies import registry
+
+    class _NoRules:
+        name = "DRSA"
+
+        def recommend(self, ctx):
+            raise StrategyUnavailable("no rules")
+
+    monkeypatch.setitem(registry._CTORS, "drsa", _NoRules)
     rc = RuleCache()
-    rc.put(_rules(), decision_table_size=40, gamma=1.0)
-    _run(_req(), settings=_settings(), rule_cache=rc, snapshot_cache=None)
+    rc.put(_rules(), decision_table_size=90, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
+    _run(_req(), settings=_settings(drsa_min_rules=1), rule_cache=rc, snapshot_cache=None)
     recs = [json.loads(l) for l in capsys.readouterr().out.splitlines() if '"kind":"recommend"' in l]
     assert recs
     last = recs[-1]
-    assert last["judged_phase"] == "SIMILARITY"
+    assert last["judged_phase"] == "DRSA"
     assert last["phase"] == "COVERAGE"
+    assert last["strategy"] == "RANDOM"
     assert last["fell_back"] is True
-    assert last["fallback_reason"] and "SIMILARITY" in last["fallback_reason"]
+    assert last["fallback_reason"] and "DRSA" in last["fallback_reason"]
