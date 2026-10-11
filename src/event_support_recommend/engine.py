@@ -6,6 +6,7 @@ docs/rules/coding.md)。phase には「実際に使えた戦略」を返す。
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,7 +18,7 @@ from .api.schemas import (
     RecommendResponse,
     ScoreOut,
 )
-from .assignment import rank_pool, round_cell_count, select_assigned
+from .assignment import Pick, rank_pool, round_cell_count, select_picks, tag_pick
 from .cache import RuleCache
 from .models import (
     CandidateBooth,
@@ -32,7 +33,7 @@ from .models import (
     VisitSource,
     InterestMatch,
 )
-from .phases import GateResult, decide_phase, evaluate_quality_gate
+from .phases import GateResult, count_effective_rules, decide_phase, evaluate_quality_gate
 from .settings import Settings
 from .strategies import StrategyUnavailable
 from .strategies.common import compute_candidate_features, vector_from_features
@@ -61,7 +62,48 @@ class LastGate:
     evaluated_at: datetime
     size: int | None
     gamma: float
+    # ゲートが数えた「有効な確実規則」（上下合わせ・リフト条件つき）。生の本数は certain_rules_count。
+    effective_rules_count: int
     certain_rules_count: int
+    base_rate_high: float | None = None
+    base_rate_low: float | None = None
+
+
+class SlotStats:
+    """マスを選んだ方法の累計（`/ops/state` の `ser.used` に出す）。本番経路 (kind=recommend) だけ数える。"""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.unlocks = 0
+        self.slots = 0
+        self.by_strategy: dict[str, int] = {}
+        self.mismatch_slots = 0
+
+    def record(self, picks: list[Pick]) -> None:
+        with self._lock:
+            self.unlocks += 1
+            for p in picks:
+                self.slots += 1
+                self.by_strategy[p.tag] = self.by_strategy.get(p.tag, 0) + 1
+                if p.slot == "MISMATCH_QUOTA":
+                    self.mismatch_slots += 1
+
+    def state(self) -> dict:
+        with self._lock:
+            return {
+                "unlocks": self.unlocks,
+                "slots": self.slots,
+                "mismatch_slots": self.mismatch_slots,
+                "by_strategy": {k: self.by_strategy.get(k, 0) for k in ("RANDOM", "DRSA", "SER", "EXPLORE")},
+            }
+
+
+def _record_slots(app_state, picks: list[Pick]) -> None:
+    stats = getattr(app_state, "slot_stats", None)
+    if stats is None:
+        stats = SlotStats()
+        app_state.slot_stats = stats
+    stats.record(picks)
 
 
 def _runtime_config(s: Settings) -> RuntimeConfig:
@@ -203,9 +245,12 @@ def run_recommendation(
     cfg = _runtime_config(settings)
 
     # --- キャッシュ読み出し（リクエスト経路では生成も取得もしない, R-2）---
-    ruleset, rules_built_at = rule_cache.get()
-    decision_table_size = rule_cache.decision_table_size
-    gamma = rule_cache.gamma
+    # 更新は別スレッドで走る (#47)。項目ごとに読むと更新途中の組み合わせを読みうるので、
+    # 1 回のロックでまとめて写し、以降はこの写しだけを使う。
+    view = rule_cache.read()
+    ruleset, rules_built_at = view.ruleset, view.built_at
+    decision_table_size = view.decision_table_size
+    gamma = view.gamma
     snapshot_data = snapshot_cache.get() if snapshot_cache is not None else None
 
     try:
@@ -218,7 +263,9 @@ def run_recommendation(
         return _empty_response()
 
     # --- 品質ゲート & フェーズ判定 ---
-    certain_up = len(ruleset.certain_up) if ruleset else 0
+    certain_total = len(ruleset.certain_up) + len(ruleset.certain_down) if ruleset else 0
+    base_high, base_low = view.base_rate_high, view.base_rate_low
+    effective_rules = count_effective_rules(ruleset, base_high, base_low, settings.drsa_min_lift)
     candidate_coverage = 0.0
     if ruleset is not None and ruleset.rules:
         try:
@@ -231,7 +278,7 @@ def run_recommendation(
         except Exception:  # pragma: no cover - 防御。ゲートは覆えない側に倒す
             candidate_coverage = 0.0
     gate = evaluate_quality_gate(
-        decision_table_size, certain_up, gamma, candidate_coverage, settings
+        decision_table_size, effective_rules, gamma, candidate_coverage, settings
     )
     judged_phase = decide_phase(decision_table_size, settings, gate=gate)
 
@@ -245,7 +292,10 @@ def run_recommendation(
             evaluated_at=now,
             size=decision_table_size,
             gamma=gamma,
-            certain_rules_count=certain_up,
+            effective_rules_count=effective_rules,
+            certain_rules_count=certain_total,
+            base_rate_high=base_high,
+            base_rate_low=base_low,
         )
 
     # --- 退避ラダー: judged_phase と STRATEGY から実際の戦略を選び、
@@ -265,15 +315,32 @@ def run_recommendation(
         unlock_context=ctx.request.unlock_context,
         exclude_booth_ids=ctx.request.exclude_booth_ids,
     )
-    assigned = select_assigned(
-        scored,
-        cell_count=ctx.request.cell_count,
-        user_id=ctx.request.user_id,
-        unlock_context=ctx.request.unlock_context,
-        exclude_booth_ids=ctx.request.exclude_booth_ids,
-        max_per_category=cfg.max_per_category,
-    )
-    assigned_ids = {s.booth_id for s in assigned}
+    # 関心外枠（半分）→ セレンディピティ規則 / 探索 / 採点順で選ぶ (ADR 0010)。
+    # 各マスの reason.strategy は RANDOM / DRSA / SER / EXPLORE。
+    try:
+        picks = select_picks(
+            scored,
+            cell_count=ctx.request.cell_count,
+            user_id=ctx.request.user_id,
+            unlock_context=ctx.request.unlock_context,
+            exclude_booth_ids=ctx.request.exclude_booth_ids,
+            max_per_category=cfg.max_per_category,
+            top_category=ctx.participant.survey.top_interest_category,
+            ser_rules=view.ser_rules,
+            mm_quota=settings.mm_quota,
+            explore_rate=settings.explore_rate,
+        )
+    except Exception as exc:  # pragma: no cover - 防御。500 にしない（採点順で選ぶ）
+        jsonl.emit(log_kind, {"error": f"select_picks_failed: {exc!r}", "user_id": req.user_id})
+        picks = [
+            Pick(s, str(s.reason.get("strategy", "RANDOM")), "REST")
+            for s in ranked[: round_cell_count(ctx.request.cell_count)]
+        ]
+    tagged = {p.booth.booth_id: tag_pick(p) for p in picks}
+    assigned = [tagged[p.booth.booth_id] for p in picks]
+    assigned_ids = set(tagged)
+    if app_state is not None and log_kind == "recommend":
+        _record_slots(app_state, picks)
     rank_by_id = {s.booth_id: i + 1 for i, s in enumerate(ranked)}
 
     scores_out = [
@@ -286,7 +353,7 @@ def run_recommendation(
             attributes=s.attributes,
             reason=s.reason,
         )
-        for s in scored
+        for s in (tagged.get(x.booth_id, x) for x in scored)
     ]
     assigned_out = [
         AssignedOut(
@@ -425,6 +492,16 @@ def _log_recommend(
             "assigned_count": len(resp.assigned),
             "cell_count": round_cell_count(req.cell_count),
             "assigned_booth_ids": [a.booth_id for a in resp.assigned],
+            # 各マスを選んだ方法 (RANDOM / DRSA / SER / EXPLORE)。SER は該当規則の id も残す。
+            "assigned_strategies": [
+                {
+                    "booth_id": a.booth_id,
+                    "strategy": (a.reason or {}).get("strategy"),
+                    "slot": (a.reason or {}).get("slot"),
+                    **({"ser_rule": (a.reason or {})["ser_rule"]} if (a.reason or {}).get("ser_rule") else {}),
+                }
+                for a in resp.assigned
+            ],
             "scores": [
                 {"booth_id": s.booth_id, "score": s.score, "interest_match": s.interest_match,
                  "was_assigned": s.was_assigned, "rank_in_event": s.rank}

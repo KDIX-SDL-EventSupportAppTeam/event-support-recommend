@@ -7,6 +7,7 @@ FastAPI の lifespan から1本だけ起動する。
 - 1周ごとに JSONL に `kind=snapshot` を記録する（SQL 本文と鍵は載せない）
 
 決定表の組み立て・キャッシュ更新は `on_snapshot` コールバックに委ねる（段3-b で結線）。
+コールバックは `asyncio.to_thread` で呼ぶ（同期関数であること。イベントループを止めない、#47）。
 このモジュール自体は `drsa/` も `features/` も知らない。
 """
 
@@ -51,7 +52,8 @@ class SnapshotRefresher:
             return EventSnapshot.unavailable()
 
         try:
-            self._on_snapshot(snapshot)
+            # 決定表・規則の構築は CPU を使うので別スレッドで。構築中も /recommend を止めない。
+            await asyncio.to_thread(self._on_snapshot, snapshot)
         except Exception as exc:  # pragma: no cover - 防御。前回キャッシュは保持される
             jsonl.emit("snapshot", {"ok": False, "error": f"build_raised: {exc!r}"})
             return snapshot

@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from . import __version__
 
@@ -26,12 +28,18 @@ class Settings(BaseSettings):
     # --- フェーズ ---
     phase_similarity_min: int = 30
     phase_drsa_min: int = 60
-    enabled_attributes: list[str] = Field(
+    # NoDecode: pydantic-settings が JSON として先に解釈するのを止め、下の _split_csv に任せる (#46)。
+    enabled_attributes: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["preference_match", "rating_affinity"]
     )
 
     # --- 品質ゲート (docs/specs/03-phases.md §3.3) ---
-    drsa_min_rules: int = 3
+    # 確実規則は「上方・下方合わせて、確信度 − 基準率 >= drsa_min_lift」のものを数える。
+    # 旧: 上方だけで 3 本。条件属性が実質 1 つで最大 2 本前後しか出ず、DRSA が解放の 0〜4% しか動かなかった。
+    # γ は予測力を測らないので、★4 を付けやすい会場では偽の規則が確信度だけでゲートを通る。
+    # リフトで防ぐ (ADR 0010, docs/specs/03-phases.md §3.3)。
+    drsa_min_rules: int = 2
+    drsa_min_lift: float = 0.10
     drsa_min_gamma: float = 0.5
     drsa_min_coverage: float = 0.5
 
@@ -58,8 +66,28 @@ class Settings(BaseSettings):
     drsa_coverage_floor: float = 0.2
     max_per_category: int = 0  # 0 = 無効
 
+    # --- マスの割り当て (docs/specs/04-strategies.md §6, ADR 0010) ---
+    # 開くマスの半分を関心外枠にする（2→1、4→2、6→3）。DRSA は関心一致ブースに寄るので、
+    # 枠を決めておかないと関心外がほとんど薦められない。75% にするとラフ集合の上乗せがほぼ消える。
+    mm_quota: float = 0.5
+    # 関心外枠の 1 マスごとに、この割合で探索（関心外からランダム）する。自己強化を防ぎ、
+    # 規則で選んだ関心外と比べる対照にもなる。0 にすると比較群が無くなる。
+    explore_rate: float = 0.3
+
+    # --- セレンディピティ規則 (rst/, docs/specs/05-drsa.md §8, ADR 0010) ---
+    # 関心外ブースへの評価だけから「第1希望 × カテゴリ → ★4」を作る。数値の根拠はシミュレーション。
+    ser_min_rows: int = 20  # 関心外の評価がこれ未満なら規則を作らない
+    ser_smin: int = 5  # グループの最小件数（DRSA の min_support と同じ「各5件」）
+    ser_min_persons: int = 3  # グループの最小人数。1人の癖を規則にしない
+    ser_min_p: float = 0.5  # グループの★4率の下限
+    # グループの★4率 − そのカテゴリ自体の★4率 の下限。比較基準を全体の★4率にすると人気カテゴリを拾う
+    ser_lift: float = 0.15
+
     # --- DRSA ---
-    drsa_consistency: float = 0.8
+    # 0.8 では確実規則がほとんど出なかった。偽の規則はリフト条件で防ぐ (ADR 0010)。
+    drsa_consistency: float = 0.6
+    # 最小支持 5 = 属性パターンあたり最低5件 (docs/specs/05-drsa.md §3)。
+    # 高評価は★4 のみ: high_rating_ratio=0.75 は4段階の★4 だけ。★3 以上にすると誤作動が 9〜10% (ADR 0010)。
     min_support: int = 5
 
     # --- スナップショット取得（段3 / ADR 0002）---
@@ -92,8 +120,12 @@ class Settings(BaseSettings):
     @field_validator("enabled_attributes", mode="before")
     @classmethod
     def _split_csv(cls, v: object) -> object:
+        # カンマ区切り（a,b）と JSON 配列（["a","b"]）の両方を受ける。
         if isinstance(v, str):
-            return [s.strip() for s in v.split(",") if s.strip()]
+            text = v.strip()
+            if text.startswith("["):
+                return json.loads(text)
+            return [s.strip() for s in text.split(",") if s.strip()]
         return v
 
     @property

@@ -1,6 +1,6 @@
 ---
 状態: 確定
-最終更新: 2026-09-05
+最終更新: 2026-10-10
 ---
 
 # 当日の運用手引き — 気を付けること
@@ -9,6 +9,14 @@
 仕様の根拠は [specs/11-deployment.md](specs/11-deployment.md)・[specs/10-observability.md](specs/10-observability.md)・
 [ADR 0009](decisions/adrs/0009-当日の切り替えは既定値のまま走らせ調整は事後に行う.md) にある。
 ここは**行動だけ**を書く。
+
+---
+
+> **2026-10-10 に推薦方式が変わった（[ADR 0010](decisions/adrs/0010-ランダムからDRSAとセレンディピティ規則へ切り替える.md)）。**
+> 自動モードは「ゲート不通過の間は完全ランダム → 通過後は DRSA」で、`SIMILARITY` は使わない。
+> 契約上の `phase` はランダム期も `COVERAGE` と記録される（`reason.strategy` が `RANDOM`）。
+> 以下で「`COVERAGE` のまま」とあるのは「**ランダムのまま**」の意味である。
+> **新しい既定値は本番前に入れ、当日は触らない**（ADR 0009）。
 
 ---
 
@@ -26,7 +34,7 @@
 
 | # | やること | 終わっていないと |
 |---|---|---|
-| **A-1** | **`READONLY_PROXY_URL` / `READONLY_PROXY_KEY` を Cloud Run に設定する** | **一日中 `COVERAGE` のまま。`SIMILARITY` / `DRSA` は一度も動かない**（下記 §2） |
+| **A-1** | **`READONLY_PROXY_URL` / `READONLY_PROXY_KEY` を Cloud Run に設定する** | **一日中ランダム（`phase=COVERAGE`）のまま。`DRSA` もセレンディピティ規則も一度も動かない**（下記 §2） |
 | **A-0** | **前日までに `main` を凍結する**（下記 §1.1） | **当日 `main` にマージした瞬間に本番が差し替わる** |
 | A-2 | サーバー側の `RECOMMENDER_URL` を Cloud Run の URL に設定する | 推薦が一度も呼ばれない |
 | A-3 | イベント開始1時間前に `--min-instances=1` へ上げる（コマンドは §8） | コールドスタートで数秒かかり、サーバー側のタイムアウト（1000ms）に届かない |
@@ -34,13 +42,13 @@
 
 ### A-1 が最重要である理由
 
-段3・段4（スナップショット取得と `SIMILARITY` / `DRSA` の結線）は**実装済み**である。
+段3・段4（スナップショット取得と `DRSA` / セレンディピティ規則の結線）は**実装済み**である。
 しかし `READONLY_PROXY_URL` が空だと `build_repository()` が `UnavailableRepository` を返し
 （[repository.py](../src/event_support_recommend/data/repository.py) `build_repository`）、
 スナップショットの定期取得そのものが起動しない
 （[app.py](../src/event_support_recommend/api/app.py) の `snapshot_wired`）。
 
-結果として決定表が育たず、`decision_table_size` は永久に `null`、フェーズ判定は常に `COVERAGE` になる。
+結果として決定表が育たず、`decision_table_size` は永久に `null`、推薦は一日中ランダム（契約の `phase` は `COVERAGE`）になる。
 **実装は動いているのに設定だけで研究が1本に縮む**という、最も気づきにくい壊れ方をする。
 
 **確認方法**（当日朝、参加者の訪問が始まってから）:
@@ -93,13 +101,15 @@ GET /ops/state   （X-Ops-Token ヘッダが要る）
 | **フォールバック率**（直近30分） | ダッシュボード（DB） | 30%超 | **最優先。** ログ確認・再起動 |
 | **評価回収率** | ダッシュボード（DB） | 25%未満 | 運営に声かけを依頼（**当日打てる数少ない手**） |
 | 現在フェーズ | `/ops/state` | 15時でも `COVERAGE` | 決定表が育っていない。**まず §1 A-1 を疑う** |
-| γ・確実規則の本数 | `/ops/state` | γ が低い / 規則0〜1本 | 品質ゲートが正しく止めている。**それでよい** |
+| γ・**有効な確実規則の本数**（リフト 0.10 以上、上下合計） | `/ops/state`（`gate_detail`） | γ が低い / 有効規則 0〜1 本 | 品質ゲートが正しく止めている。**それでよい** |
+| **セレンディピティ規則の本数・使用状況** | `/ops/state`（`ser`） | 関心外の評価が 20 件を超えても 0 本 | 評価が集まっていない（推薦マスでの評価の依頼を確認）。**ゲートや規則の値は触らない** |
+| マスごとの strategy の内訳（RANDOM / DRSA / SER / EXPLORE） | ログ `kind=recommend`（`assigned_strategies`）・`/ops/state` の `ser.used.by_strategy` | 探索（EXPLORE）が 3 割から大きくずれる | 乱数・実装の異常を疑う（人気順の退化ではない） |
 | 応答時間 p95 | ダッシュボード | 600ms 超 | タイムアウト（1000ms）が近い |
 | **割当ブースの集中度** | ダッシュボード（DB） | 特定ブースに集中 | **人気順への退化。去年の失敗の再来** |
 
 ### 見てはいけないもの
 
-> **A/B の効果（DRSA 枠と COVERAGE 枠の訪問率の差）を当日に見ない。**
+> **効果の差（規則で選んだ関心外 SER と探索 EXPLORE の★4 率の差、ランダム期と DRSA 期の訪問率の差）を当日に見ない。**
 
 見ると「DRSA のほうが悪いから設定を変えよう」と判断したくなる。**それをやると実験が壊れる。**
 効果は当日の行動に何も影響しないので、見なくても失うものは無い
@@ -113,15 +123,14 @@ GET /ops/state   （X-Ops-Token ヘッダが要る）
 
 | # | 手段 | 効果 | 失うもの |
 |---|---|---|---|
-| 1 | `PHASE_DRSA_MIN` を極端に大きくする | DRSA を止めて `SIMILARITY` へ落とす | DRSA のデータ |
-| 2 | `PHASE_SIMILARITY_MIN` も上げる | `COVERAGE` のみで運用 | 段3・段4 のデータ |
+| 1 | `PHASE_DRSA_MIN` を極端に大きくする | DRSA を止めて**ランダム**へ落とす（セレンディピティ規則・探索は引き続き動くが、規則の無い枠はランダムで埋まる） | DRSA のデータ |
+| 2 | `READONLY_PROXY_URL` を空にして再デプロイする | スナップショットを取らない＝決定表が育たず**ランダムのみ**で運用 | 段3・段4 のデータ |
 | 3 | サーバー側の `RECOMMENDER_URL` を空にする | 推薦を完全に切り離す。**最終手段** | 研究データのすべて |
 
 **どれを使っても、変更時刻を記録する。** 前後を別データとして扱わないと分析が壊れる
 （[09-research-design.md](specs/09-research-design.md) R-2）。
 
-なお、退避は設計に組み込まれている。規則が出なければ `SIMILARITY` へ、
-近傍が作れなければ `COVERAGE` へ**自動で静かに落ちる**（[04-strategies.md](specs/04-strategies.md) §5）。
+なお、退避は設計に組み込まれている。DRSA が使えなければ（規則が出ない・キャッシュ未構築・例外）**ランダムへ自動で静かに落ちる**（[04-strategies.md](specs/04-strategies.md) §5）。
 **「フェーズが下がった」こと自体は障害ではない。**
 
 ---
@@ -188,7 +197,7 @@ gcloud logging read 'resource.type="cloud_run_revision"
 | 上げた直後 | 反映確認 | `gcloud run services describe $SERVICE --project=$PROJECT_ID --region=$REGION --format="value(spec.template.metadata.annotations.autoscaling\.knative\.dev/minScale)"` → `1` | |
 | 上げて 10 分後 | T-6/T-7: 放置後の応答時間 | `curl -s -o /dev/null -w "%{time_total}\n" -H "Content-Type: application/json" -d @docs/tests/runs/sample-request.json $SERVICE_URL/recommend/cells` → **1.000 未満** | |
 | 同時 | T-8: `/ops/state` が従来どおり応答 | 上の `/ops/state` が 200 | |
-| 開場後 | §3「見るもの」を 1 時間ごとに確認。`phase` が 15 時でも `COVERAGE` なら **A-1 を疑う。main は触らない** | `/ops/state` の `phase.current` | |
+| 開場後 | §3「見るもの」を 1 時間ごとに確認。`phase` が 15 時でも `COVERAGE` なら **A-1 を疑う。main は触らない**。DRSA に切り替わる目安は 12〜13 時（ローカルの合成 190 人で 12:00 前後）。`ser`（セレンディピティ規則の本数・`used`）も見る | `/ops/state` の `phase.current`・`ser` | |
 | 終了後 | `--min-instances=0` に戻す（O-6） | `gcloud run services update $SERVICE --project=$PROJECT_ID --region=$REGION --min-instances=0` | |
 | 終了後 | 当日 env の上書きがあれば手で消す。凍結解除（§9） | `gcloud run services describe … --format=yaml \| grep -n PHASE_` → 0 行 | |
 | 翌日 | 凍結が守られたかを機械判定 | `gh pr list --repo KDIX-SDL-EventSupportAppTeam/event-support-recommend --base main --state merged --search "merged:2026-10-16..2026-10-16" --json number` → `[]` | |

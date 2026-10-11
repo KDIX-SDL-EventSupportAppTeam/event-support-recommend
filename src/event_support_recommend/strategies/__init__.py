@@ -3,9 +3,9 @@
 FastAPI・SQL・HTTP を知らない。RecommendationContext だけを見る
 (docs/specs/08-architecture.md §1, docs/specs/04-strategies.md §0 S-4)。
 
-本番で使うのは COVERAGE。RANDOM は下限ベースライン（対照群）で本番既定にしない
-(docs/decisions/adrs/0007-戦略の選択を環境変数で行う.md)。SIMILARITY / DRSA は
-ADR 0002（データ入手経路）の決着待ちで未実装 (docs/specs/08-architecture.md §6 段3-4)。
+自動モードで使うのは RANDOM（ゲート不通過）→ DRSA（ゲート通過、使えなければ RANDOM）
+(docs/decisions/adrs/0010-…)。COVERAGE / SIMILARITY は自動モードでは使わず、
+`STRATEGY=coverage|similarity` で明示したときだけ使える。
 
 戦略の選択は registry.resolve_strategy を通す。engine.py は具象クラスを import しない。
 """

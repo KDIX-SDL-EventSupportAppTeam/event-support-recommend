@@ -45,9 +45,42 @@ def _finite_int(value: object) -> int | None:
     return None
 
 
+# 浮動小数の丸め（0.6 - 0.5 = 0.0999…）で境界の 0.10 ちょうどを落とさないための許容。
+_LIFT_EPS = 1e-9
+
+
+def count_effective_rules(
+    ruleset: object | None,
+    base_rate_high: float | None,
+    base_rate_low: float | None,
+    min_lift: float,
+) -> int:
+    """品質ゲートが数える「有効な確実規則」の本数。
+
+    上方規則（>=HIGH）は 確信度 − 全体の HIGH 率、下方規則（<=LOW）は 確信度 − 全体の LOW 率 が
+    `min_lift` 以上のものだけを数える。基準率が無い（決定表が空）なら 0 本。
+
+    γ は予測力を測らない。基準率を上回らない規則（どの条件でも同じくらい当たる規則）は、
+    好みと無関係な「偽の規則」でありうるので数えない (docs/specs/03-phases.md §3.3)。
+    `ruleset` は `certain_up` / `certain_down`（各 Rule は `confidence` を持つ）を備えたもの。
+    """
+    if ruleset is None:
+        return 0
+    n = 0
+    if base_rate_high is not None:
+        n += sum(
+            1 for r in ruleset.certain_up if r.confidence - base_rate_high >= min_lift - _LIFT_EPS
+        )
+    if base_rate_low is not None:
+        n += sum(
+            1 for r in ruleset.certain_down if r.confidence - base_rate_low >= min_lift - _LIFT_EPS
+        )
+    return n
+
+
 def evaluate_quality_gate(
     decision_table_size: object,
-    certain_rules_count: int,
+    effective_rules_count: int,
     gamma: float,
     candidate_coverage: float,
     settings: Settings,
@@ -55,14 +88,14 @@ def evaluate_quality_gate(
     """DRSA へ昇格する4条件 (AND) を項目別に評価する (docs/specs/03-phases.md §3.3)。
 
     1. 決定表の件数         >= PHASE_DRSA_MIN
-    2. 確実規則の本数       >= DRSA_MIN_RULES
+    2. 有効な確実規則の本数 >= DRSA_MIN_RULES（`count_effective_rules`: 上下合わせ、リフト条件つき）
     3. 近似の質 γ           >= DRSA_MIN_GAMMA
     4. 規則が候補を覆う割合 >= DRSA_MIN_COVERAGE
     """
     size = _finite_int(decision_table_size)
     detail = GateDetail(
         size=size is not None and size >= settings.phase_drsa_min,
-        rules=certain_rules_count >= settings.drsa_min_rules,
+        rules=effective_rules_count >= settings.drsa_min_rules,
         gamma=(not math.isnan(gamma)) and gamma >= settings.drsa_min_gamma,
         coverage=(not math.isnan(candidate_coverage))
         and candidate_coverage >= settings.drsa_min_coverage,
@@ -80,18 +113,19 @@ def decide_phase(
     """決定表の件数から判定フェーズを返す。
 
     - None / 負数 / NaN / 0 …… COVERAGE（例外を投げない）
-    - < PHASE_SIMILARITY_MIN …… COVERAGE
-    - < PHASE_DRSA_MIN …………… SIMILARITY
-    - >= PHASE_DRSA_MIN ………… 品質ゲート通過なら DRSA、そうでなければ SIMILARITY
+    - < PHASE_DRSA_MIN …………… COVERAGE
+    - >= PHASE_DRSA_MIN ………… 品質ゲート通過なら DRSA、そうでなければ COVERAGE
+
+    自動モードの段階は「ランダム → DRSA」(ADR 0010)。SIMILARITY は返さない
+    （契約の phase は 3 値のままで、ランダム期は COVERAGE として記録される）。
+    `PHASE_SIMILARITY_MIN` は自動モードでは使わない。
 
     ここが返すのは「判定結果」。実際に使えた戦略は退避のあとで決まる
     (docs/specs/04-strategies.md §5)。
     """
     size = _finite_int(decision_table_size)
-    if size is None or size < settings.phase_similarity_min:
+    if size is None or size < settings.phase_drsa_min:
         return Phase.COVERAGE
-    if size < settings.phase_drsa_min:
-        return Phase.SIMILARITY
     if gate is not None and gate.passed:
         return Phase.DRSA
-    return Phase.SIMILARITY
+    return Phase.COVERAGE

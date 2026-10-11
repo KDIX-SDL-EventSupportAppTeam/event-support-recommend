@@ -1,26 +1,18 @@
-"""RANDOM — 対照群・下限ベースライン (docs/decisions/adrs/0007-戦略の選択を環境変数で行う.md §2)。
+"""RANDOM — 候補ごとに独立の一様乱数 (docs/decisions/adrs/0010-…, docs/specs/04-strategies.md §2.1)。
 
-**初期実装ではなく比較対象。** COVERAGE がランダムより本当に良いのかを示す下限として、
-事前検証 (docs/specs/09-research-design.md) で使う。本番の既定にはしない
-（`APP_ENV=production` では registry が auto へ落とす）。
+自動モードで品質ゲートを通る前の**正規の戦略**であり、DRSA が使えないときの退避先でもある。
+かつては対照群・下限ベースラインとして interest_match の4区分単位で乱数を割り当てていた
+（ADR 0007 §2 の P-6 を守るため）が、クラス内が同点になり順位が `visitor_count` 昇順で決まって
+COVERAGE と同じ反人気バイアスが残った。**ADR 0007 の未決事項は「乱択性を採る」で決着した**
+（2026-10-10, ADR 0010）。P-6 は課さない。
 
-不変条件の守り方 (docs/specs/07-testing.md §1):
-  - S-1 候補全件を返す
-  - S-3 例外を投げない
-  - S-5 / P-6 同じ interest_match 内では score を一定にし、並べ替えを visitor_count 昇順へ委ねる
-  - P-4 乱数シードは seed_for(user_id, unlock_context)。参加者ごとにばらける
-  - P-5 MISMATCH / UNKNOWN の score を 0 にしない
-
-**この実装が乱択するのは interest_match の4クラスの序列だけである。**
-ADR 0007 §2 が P-6（同じ interest_match 内は visitor_count 昇順に厳密に並ぶ）の通過を
-課しているため、クラス内は同点にするほかない。結果として最終順位は
-クラス序列 → visitor_count 昇順で決まり、**COVERAGE と同じ反人気バイアスが残る。**
-
-つまり本実装は「visitor_count を無視する完全なランダム」ではない。
-ADR 0007 §2 が期待する「COVERAGE がランダムより本当に良いのかを示す下限」としては
-弱く、P-6 の要求と正面から衝突する。**どちらを優先するかは未決定**であり、
-勝手に決めない（docs/README.md 未決定事項の一覧・AGENTS.md 禁止6）。
-現状は ADR の明文（P-6 を必ず通す）に従っている。
+性質:
+  - 各候補のスコアは、その候補だけから決まる独立の一様乱数。他の候補の有無・順序に依存しない
+  - シードは `seed_for(user_id, unlock_context + "|random|" + booth_id)`。同じ入力なら同じ結果、
+    参加者・解放ごとにばらける
+  - 候補全件にスコアを返す (S-1)。スコアは 0 にしない (P-5。0 だと構造排除に見える)
+  - `visitor_count`・関心一致を一切使わない。人気順にならないのは乱数であることで保たれる (S-2)
+  - 契約の `phase` は 3 値なので COVERAGE として記録され、`reason.strategy = RANDOM` で区別される
 """
 
 from __future__ import annotations
@@ -29,19 +21,18 @@ import random
 
 from .. import __version__
 from ..features import ATTRIBUTES_SCHEMA_VERSION
-from ..models import InterestMatch, RecommendationContext, ScoredBooth
+from ..models import RecommendationContext, ScoredBooth
 from .base import seed_for
 from .common import compute_candidate_features
 
-# MISMATCH / UNKNOWN をこの値より下げない (P-5)。
-_FLOOR = 0.05
-# クラスへ乱数を割り当てる固定順。シードが同じなら結果が同じになるよう順序を固定する。
-_CLASS_ORDER = (
-    InterestMatch.MATCH,
-    InterestMatch.PARTIAL,
-    InterestMatch.MISMATCH,
-    InterestMatch.UNKNOWN,
-)
+# スコアを 0 にしない (P-5)。一様乱数の下端が 0 に張り付かない程度の小さな値。
+_FLOOR = 1e-6
+
+
+def random_score(user_id: str, unlock_context: str, booth_id: str) -> float:
+    """候補 1 件ぶんの独立な一様乱数 (_FLOOR..1.0)。他の候補に依存しない。"""
+    rng = random.Random(seed_for(user_id, f"{unlock_context}|random|{booth_id}"))
+    return min(1.0, max(_FLOOR, round(rng.random(), 6)))
 
 
 class RandomStrategy:
@@ -51,19 +42,10 @@ class RandomStrategy:
         cfg = ctx.config
         feats = compute_candidate_features(ctx)
 
-        rng = random.Random(
-            seed_for(ctx.request.user_id, ctx.request.unlock_context)
-        )
-        # interest_match クラスごとに一つの乱数値。クラス内は同点にして
-        # 並べ替えを共通処理（visitor_count 昇順）へ委ねる → P-6 を壊さない。
-        class_score = {
-            cls: max(_FLOOR, round(rng.uniform(_FLOOR, 1.0), 6)) for cls in _CLASS_ORDER
-        }
-
         out: list[ScoredBooth] = []
         for cand in ctx.request.candidates:
             f = feats[cand.booth_id]
-            score = class_score[f.interest_match]
+            score = random_score(ctx.request.user_id, ctx.request.unlock_context, cand.booth_id)
 
             condition = {}
             for attr in cfg.enabled_attributes:
@@ -79,17 +61,16 @@ class RandomStrategy:
                 "strategy": self.name,
                 "enabled": list(cfg.enabled_attributes),
                 "condition": condition,
-                "raw": {**f.raw, "class_score": score},
+                "raw": {**f.raw, "random_score": score},
             }
             reason = {
                 "v": 1,
                 "strategy": self.name,
                 "rules": [],
-                "tie_break": "visitor_count_asc",
                 # 分析側がこの行だけを見て何をした戦略か判別できるようにする
-                # (docs/specs/01-io-contract.md §3.3 (1))。docstring と主張を一致させること。
-                "note": "baseline: randomizes interest_match class order only; "
-                        "ties broken by visitor_count_asc (P-6)",
+                # (docs/specs/01-io-contract.md §3.3 (1))。
+                "note": "independent uniform random per candidate; "
+                        "ignores visitor_count and interest_match",
                 "engine": {"version": cfg.engine_version or __version__, "rules_built_at": None},
             }
             out.append(
