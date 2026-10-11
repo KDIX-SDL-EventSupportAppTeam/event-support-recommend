@@ -58,9 +58,11 @@ steps:
       # コンソールから PHASE_DRSA_MIN を上書きした場合、その値は次回以降のデプロイでも
       # 残り続ける。**イベント終了後に手で消すこと。** 消し忘れると
       # 「上書きした状態が既定」になり X-5 が破れる。
-      - --update-env-vars=^@^APP_ENV=production@ENGINE_VERSION=$COMMIT_SHA@STRATEGY=auto@LOG_LEVEL=info
+      - --update-env-vars=^@^APP_ENV=production@ENGINE_VERSION=$COMMIT_SHA@STRATEGY=auto@LOG_LEVEL=info@READONLY_PROXY_URL=https://event-support-readonly-proxy-953810811347.asia-northeast1.run.app
       # Secret 名はサーバーの Secret と衝突しないよう RECOMMEND_ を前置する (§3)。
-      - --set-secrets=OPS_TOKEN=RECOMMEND_OPS_TOKEN:latest
+      # READONLY_PROXY_* は GCP 上の読み取り専用ラッパー（event-support-analytics/deploy/gcp-readonly-proxy）。
+      # さくらに PHP を置く案（sakura-readonly-proxy）の代替。無いと一日 COVERAGE 固定（OPERATIONS.md A-1）
+      - --set-secrets=OPS_TOKEN=RECOMMEND_OPS_TOKEN:latest,READONLY_PROXY_KEY=RECOMMEND_READONLY_PROXY_KEY:latest
 
 options:
   logging: CLOUD_LOGGING_ONLY
