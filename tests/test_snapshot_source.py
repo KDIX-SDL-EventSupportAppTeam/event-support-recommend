@@ -286,7 +286,7 @@ def test_happy_path_builds_snapshot_with_all_tables():
         "booths": [{"id": "b1", "event_id": "ev1", "category_id": "c1", "is_active": 1}],
         "check_ins": [],
         "booth_ratings": [],
-        "user_survey_answers": [],
+        "user_survey_answers": [{"user_id": "u1", "event_id": "ev1"}],
         "categories": [{"id": "c1", "event_id": "ev1", "name": "AI"}],
     }
     repo = ProxySnapshotRepository(FakeClient(rows_by_table=rows), default_event_id="ev1")
@@ -320,3 +320,59 @@ def test_enabled_attributes_from_dotenv(monkeypatch, tmp_path, raw):
     f = tmp_path / ".env"
     f.write_text(f"ENABLED_ATTRIBUTES={raw}\n", encoding="utf-8")
     assert Settings(_env_file=str(f)).enabled_attributes == ["preference_match", "rating_affinity"]
+
+
+# --------------------------------------------------------------------------- #
+# 2026-10-12 本番確認の追従
+# --------------------------------------------------------------------------- #
+def test_participants_counts_only_this_event():
+    """users は event_id で絞らないので、他イベントの参加者を数えない。"""
+    rows = {
+        "users": [
+            {"id": "u1", "role": "participant"},
+            {"id": "u_other_event", "role": "participant"},
+            {"id": "u_staff", "role": "manager"},
+        ],
+        "check_ins": [{"id": "c1", "user_id": "u_staff", "booth_id": "b1", "event_id": "ev1"}],
+        "user_survey_answers": [{"user_id": "u1", "event_id": "ev1"}],
+    }
+    snap = ProxySnapshotRepository(FakeClient(rows_by_table=rows), default_event_id="ev1").fetch()
+    assert snap.participants == 1
+
+
+def test_bingo_cells_scoped_via_bingo_cards():
+    sql, params = build_select("bingo_cells", "ev1")
+    assert sql.endswith(
+        "WHERE `card_id` IN (SELECT `id` FROM `bingo_cards` WHERE `event_id` = ?)"
+    )
+    assert params == ["ev1"]
+    sql, params = build_select("bingo_cells", "ev1", scope_via_parent=False)
+    assert "WHERE" not in sql and params == []
+
+
+def test_bingo_cells_falls_back_when_proxy_rejects_subquery():
+    """サブクエリを知らない古いプロキシでも、全件取得に戻して自発訪問の信号を保つ。"""
+
+    class RejectSubquery(FakeClient):
+        def select(self, table, sql, params):
+            self.calls.append((table, sql, params))
+            if "IN (SELECT" in sql:
+                raise ProxyError(f"proxy request failed for table {table!r}")
+            return self._rows.get(table, [])
+
+    client = RejectSubquery(rows_by_table={"bingo_cells": [{"card_id": "k1", "booth_id": "b1"}]})
+    snap = ProxySnapshotRepository(client, default_event_id="ev1").fetch()
+    assert snap.built is True
+    assert snap.tables["bingo_cells"] == [{"card_id": "k1", "booth_id": "b1"}]
+    assert sum(1 for t, _, _ in client.calls if t == "bingo_cells") == 2
+
+
+def test_live_table_failure_still_unavailable_when_parallel():
+    class FailOne(FakeClient):
+        def select(self, table, sql, params):
+            if table == "booths":
+                raise ProxyError("proxy request failed for table 'booths'")
+            return []
+
+    snap = ProxySnapshotRepository(FailOne(), default_event_id="ev1").fetch()
+    assert snap.built is False

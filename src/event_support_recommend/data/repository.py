@@ -12,12 +12,19 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
 from .. import logging as jsonl
 from ..models import EventSnapshot
-from .live_tables import EVENT_SCOPED_TABLES, LIVE_TABLES, OPTIONAL_TABLES, build_select
+from .live_tables import (
+    EVENT_SCOPED_TABLES,
+    LIVE_TABLES,
+    OPTIONAL_TABLES,
+    PARENT_SCOPED_TABLES,
+    build_select,
+)
 from .proxy import ProxyError, ReadonlyProxyClient
 
 
@@ -56,9 +63,11 @@ class ProxySnapshotRepository:
         client: ReadonlyProxyClient | None,
         *,
         default_event_id: str | None = None,
+        max_parallel: int = 4,
     ) -> None:
         self._client = client
         self._default_event_id = (default_event_id or "").strip() or None
+        self._max_parallel = max(1, int(max_parallel))
 
     def fetch(self, event_id: str | None = None) -> EventSnapshot:
         eid = (event_id or "").strip() or self._default_event_id
@@ -71,29 +80,50 @@ class ProxySnapshotRepository:
             jsonl.emit("snapshot", {"ok": False, "error": "no event_id resolved"})
             return EventSnapshot.unavailable()
 
-        tables: dict[str, list[dict]] = {}
-        try:
-            for name in LIVE_TABLES:
-                scoped_eid = eid if name in EVENT_SCOPED_TABLES else None
-                sql, params = build_select(name, scoped_eid)
-                tables[name] = self._client.select(name, sql, params)
-        except ProxyError as exc:
-            # str(exc) はテーブル名までしか含まない（proxy.py / live_tables.py で保証）。
-            jsonl.emit("snapshot", {"ok": False, "error": str(exc), "event_id": eid})
-            return EventSnapshot.unavailable()
+        def select(name: str, *, scope_via_parent: bool = True) -> list[dict]:
+            scoped_eid = eid if name in EVENT_SCOPED_TABLES or name in PARENT_SCOPED_TABLES else None
+            sql, params = build_select(name, scoped_eid, scope_via_parent=scope_via_parent)
+            return self._client.select(name, sql, params)
 
-        # 任意テーブル: 失敗してもスナップショットは成立させる（自発訪問の +1 が数えられなくなるだけ）。
-        for name in OPTIONAL_TABLES:
+        def select_optional(name: str) -> list[dict] | ProxyError:
             try:
-                scoped_eid = eid if name in EVENT_SCOPED_TABLES else None
-                sql, params = build_select(name, scoped_eid)
-                tables[name] = self._client.select(name, sql, params)
+                return select(name)
             except ProxyError as exc:
-                jsonl.emit("snapshot", {"ok": True, "optional_table_failed": str(exc), "event_id": eid})
+                if name not in PARENT_SCOPED_TABLES:
+                    return exc
+            # サブクエリを知らない古いプロキシは 403 を返す。全件取得に戻して信号は失わない
+            try:
+                return select(name, scope_via_parent=False)
+            except ProxyError as exc:
+                return exc
 
-        participants = sum(
-            1 for u in tables.get("users", []) if str(u.get("role")) == "participant"
-        )
+        # 1本ずつ直列だと上流（さくら）の往復が積み上がる（2026-10-12 実測 約14秒/8本）。
+        # 並列にするが、共有サーバーのさくらを叩きすぎないよう同時数は絞る。
+        with ThreadPoolExecutor(max_workers=self._max_parallel) as pool:
+            live_futs = {name: pool.submit(select, name) for name in LIVE_TABLES}
+            opt_futs = {name: pool.submit(select_optional, name) for name in OPTIONAL_TABLES}
+            tables: dict[str, list[dict]] = {}
+            try:
+                for name, fut in live_futs.items():
+                    tables[name] = fut.result()
+            except ProxyError as exc:
+                # str(exc) はテーブル名までしか含まない（proxy.py / live_tables.py で保証）。
+                for f in [*live_futs.values(), *opt_futs.values()]:
+                    f.cancel()
+                jsonl.emit("snapshot", {"ok": False, "error": str(exc), "event_id": eid})
+                return EventSnapshot.unavailable()
+
+            # 任意テーブル: 失敗してもスナップショットは成立させる（自発訪問の +1 が数えられなくなるだけ）。
+            for name, fut in opt_futs.items():
+                result = fut.result()
+                if isinstance(result, ProxyError):
+                    jsonl.emit(
+                        "snapshot", {"ok": True, "optional_table_failed": str(result), "event_id": eid}
+                    )
+                else:
+                    tables[name] = result
+
+        participants = _count_event_participants(tables)
         return EventSnapshot(
             built=True,
             built_at=datetime.now(timezone.utc),
@@ -102,6 +132,24 @@ class ProxySnapshotRepository:
             booths=len(tables.get("booths", [])),
             tables=tables,
         )
+
+
+def _count_event_participants(tables: dict[str, list[dict]]) -> int:
+    """このイベントの参加者数。
+
+    `users` は出展者・運営が混ざらないよう event_id で絞らずに取る（live_tables.py）ため、
+    role だけで数えると DB 内の全イベントの参加者になる（2026-10-12 本番で 3 人のイベントが 9 と出た）。
+    イベントで絞った表（アンケート回答・チェックイン）に現れる人に限って数える。
+    """
+    participant_ids = {
+        str(u.get("id")) for u in tables.get("users", []) if str(u.get("role")) == "participant"
+    }
+    in_event = {
+        str(r.get("user_id"))
+        for name in ("user_survey_answers", "check_ins")
+        for r in tables.get(name, [])
+    }
+    return len(participant_ids & in_event)
 
 
 def build_repository(settings) -> SnapshotRepository:
