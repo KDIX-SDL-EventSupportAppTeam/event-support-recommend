@@ -8,6 +8,10 @@ substitutions:
   _SERVICE: event-support-recommend
   _REPOSITORY: event-support
   _IMAGE: event-support-recommend
+  # スナップショットを取るイベント。空なら「直近の推薦リクエストの event_id」を使うため、
+  # 起動直後は最初の解放まで snapshot.ok=false で COVERAGE 固定になる（2026-10-12 確認）。
+  # 本番当日はトリガーの置換変数でイベント ID を入れておくこと。
+  _SNAPSHOT_EVENT_ID: ""
 
 steps:
   # 1. Docker イメージをビルド
@@ -58,7 +62,7 @@ steps:
       # コンソールから PHASE_DRSA_MIN を上書きした場合、その値は次回以降のデプロイでも
       # 残り続ける。**イベント終了後に手で消すこと。** 消し忘れると
       # 「上書きした状態が既定」になり X-5 が破れる。
-      - --update-env-vars=^@^APP_ENV=production@ENGINE_VERSION=$COMMIT_SHA@STRATEGY=auto@LOG_LEVEL=info@READONLY_PROXY_URL=https://event-support-readonly-proxy-953810811347.asia-northeast1.run.app
+      - --update-env-vars=^@^APP_ENV=production@ENGINE_VERSION=$COMMIT_SHA@STRATEGY=auto@LOG_LEVEL=info@READONLY_PROXY_URL=https://event-support-readonly-proxy-953810811347.asia-northeast1.run.app@SNAPSHOT_EVENT_ID=${_SNAPSHOT_EVENT_ID}
       # Secret 名はサーバーの Secret と衝突しないよう RECOMMEND_ を前置する (§3)。
       # READONLY_PROXY_* は GCP 上の読み取り専用ラッパー（event-support-analytics/deploy/gcp-readonly-proxy）。
       # さくらに PHP を置く案（sakura-readonly-proxy）の代替。無いと一日 COVERAGE 固定（OPERATIONS.md A-1）

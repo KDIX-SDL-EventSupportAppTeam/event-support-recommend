@@ -45,11 +45,21 @@ EVENT_SCOPED_TABLES: frozenset[str] = frozenset(
     {"check_ins", "booth_ratings", "user_survey_answers", "booths", "categories", "bingo_cards"}
 )
 
+# event_id 列を持たず、親テーブル経由でイベントに絞るテーブル → (結合列, 親テーブル)。
+# プロキシのホワイトリストはこの形（`WHERE `card_id` IN (SELECT `id` FROM `bingo_cards` WHERE `event_id` = ?)`）
+# だけを追加で通す（event-support-analytics/deploy/gcp-readonly-proxy/main.py）。
+# 絞らないと全イベントのセルを毎回読み、過去イベントが溜まるほどスナップショットが遅くなる。
+PARENT_SCOPED_TABLES: dict[str, tuple[str, str]] = {
+    "bingo_cells": ("card_id", "bingo_cards"),
+}
+
 # 決して要求してはならない列（防御。定義に入れていないので通常は到達しない）。
 FORBIDDEN_COLUMNS: frozenset[str] = frozenset({"email", "password_hash"})
 
 
-def build_select(table: str, event_id: str | None) -> tuple[str, list]:
+def build_select(
+    table: str, event_id: str | None, *, scope_via_parent: bool = True
+) -> tuple[str, list]:
     """テーブル名と列の定義から `SELECT` 文とパラメータを組み立てる。
 
     - `LIVE_TABLES` に無いテーブルは拒否する（送信前）
@@ -69,5 +79,9 @@ def build_select(table: str, event_id: str | None) -> tuple[str, list]:
     params: list = []
     if table in EVENT_SCOPED_TABLES and event_id:
         sql += " WHERE `event_id` = ?"
+        params.append(event_id)
+    elif table in PARENT_SCOPED_TABLES and event_id and scope_via_parent:
+        fk, parent = PARENT_SCOPED_TABLES[table]
+        sql += f" WHERE `{fk}` IN (SELECT `id` FROM `{parent}` WHERE `event_id` = ?)"
         params.append(event_id)
     return sql, params
