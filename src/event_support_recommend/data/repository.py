@@ -135,21 +135,19 @@ class ProxySnapshotRepository:
 
 
 def _count_event_participants(tables: dict[str, list[dict]]) -> int:
-    """このイベントの参加者数。
+    """このイベントの参加者数（ロールは問わない。出展者・運営も数える）。
 
     `users` は出展者・運営が混ざらないよう event_id で絞らずに取る（live_tables.py）ため、
-    role だけで数えると DB 内の全イベントの参加者になる（2026-10-12 本番で 3 人のイベントが 9 と出た）。
+    users 全件を数えると DB 内の全イベントの人数になる（2026-10-12 本番で 3 人のイベントが 9 と出た）。
     イベントで絞った表（アンケート回答・チェックイン）に現れる人に限って数える。
     """
-    participant_ids = {
-        str(u.get("id")) for u in tables.get("users", []) if str(u.get("role")) == "participant"
-    }
+    user_ids = {str(u.get("id")) for u in tables.get("users", [])}
     in_event = {
         str(r.get("user_id"))
         for name in ("user_survey_answers", "check_ins")
         for r in tables.get(name, [])
     }
-    return len(participant_ids & in_event)
+    return len(user_ids & in_event)
 
 
 def build_repository(settings) -> SnapshotRepository:

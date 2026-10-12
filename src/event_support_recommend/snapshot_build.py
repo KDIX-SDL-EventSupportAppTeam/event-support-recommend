@@ -6,7 +6,7 @@
 - **`build_decision_records` は純関数**。DB にも HTTP にも触れない。合成データでテストできる
 - 1行 = 「ある参加者が、あるブースを訪問し、評価した」1件
 - 評価が無い訪問は行にしない（未評価を評価0として扱わない）
-- `role <> 'participant'` と `is_active = 0` を除外する
+- ロールは問わない（出展者・スタッフの訪問も含める）。`is_active = 0` は除外する
 - 同一参加者 × 同一ブースの重複は畳む
 - 条件属性は `ENABLED_ATTRIBUTES` の2個（`features/` を呼ぶ）
 
@@ -91,10 +91,7 @@ class _RatedVisit:
 
 def _rated_visits(tables: dict[str, list[dict]], *, default_scale: int, high_ratio: float,
                   low_ratio: float) -> list[_RatedVisit]:
-    """評価済みチェックインだけを、参加者・アクティブブースに限って抽出する。"""
-    participants = {
-        str(u.get("id")) for u in tables.get("users", []) if str(u.get("role")) == "participant"
-    }
+    """評価済みチェックインだけを、アクティブブースに限って抽出する（ロールは問わない）。"""
     booth_cat: dict[str, str | None] = {}
     active_booths: set[str] = set()
     for b in tables.get("booths", []):
@@ -116,7 +113,7 @@ def _rated_visits(tables: dict[str, list[dict]], *, default_scale: int, high_rat
     for r in ratings:
         uid = str(r.get("user_id"))
         bid = str(r.get("booth_id"))
-        if uid not in participants or bid not in active_booths:
+        if bid not in active_booths:
             continue
         rating = _as_float(r.get("rating"))
         if rating is None:

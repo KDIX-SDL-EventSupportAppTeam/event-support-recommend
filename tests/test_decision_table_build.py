@@ -92,16 +92,16 @@ def test_t12_size_matches_rated_checkins():
 
 
 # --------------------------------------------------------------------------- #
-# T-13: role <> 'participant' を除外
+# T-13: ロールを問わず全員の評価を含める
 # --------------------------------------------------------------------------- #
-def test_t13_non_participant_excluded():
+def test_t13_all_roles_included():
     tables = _tables(
         users=[_u(1, role="exhibitor"), _u(2, role="staff"), _u(3, "participant")],
         booths=[_b(1)],
         check_ins=[_ci("a", "u1", "b1"), _ci("b", "u2", "b1"), _ci("c", "u3", "b1")],
         booth_ratings=[_rt("a", "u1", "b1", 4), _rt("b", "u2", "b1", 1), _rt("c", "u3", "b1", 3)],
     )
-    assert len(build_decision_records(tables, _settings())) == 1
+    assert len(build_decision_records(tables, _settings())) == 3
 
 
 # --------------------------------------------------------------------------- #
