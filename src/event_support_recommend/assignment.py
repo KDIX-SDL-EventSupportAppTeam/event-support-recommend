@@ -18,6 +18,8 @@ from .rst import SerRule
 from .strategies.base import seed_for
 
 _VALID_CELL_COUNTS = (2, 4, 6)
+# 関心外枠のフォールバックで「同点」とみなす幅（浮動小数の丸め差だけを吸収する）
+_SCORE_EPS = 1e-9
 
 
 def round_cell_count(cell_count: int) -> int:
@@ -196,6 +198,22 @@ def _category_of(s: ScoredBooth) -> str | None:
     return None if cat is None else str(cat)
 
 
+def _mismatch_fallback(remaining: Sequence[ScoredBooth], rng: random.Random) -> ScoredBooth:
+    """関心外枠のフォールバック: 点数が最も高い候補の中から、visitor_count を使わず乱数で選ぶ。
+
+    DRSA の条件属性は「関心一致 → 高評価」を学ぶので、関心外の候補は 1 回の解放の中で
+    点数がほぼ全員同じになる。`rank_pool` の同点規則（visitor_count 昇順）のまま先頭を取ると
+    「最も空いているブース」に偏り、ADR 0010 がランダム期から外した反人気バイアス（P-6）が
+    DRSA 期に残る（ADR 0010 追記 2026-10-14）。点数に差があれば高い方を優先する。
+    `remaining` は `rank_pool` の順（点数降順）で、空でないこと。
+    """
+    best = remaining[0].score
+    tied = sorted(
+        (s for s in remaining if abs(s.score - best) <= _SCORE_EPS), key=lambda s: s.booth_id
+    )
+    return tied[0] if len(tied) == 1 else rng.choice(tied)
+
+
 def select_picks(
     scored: Sequence[ScoredBooth],
     *,
@@ -214,7 +232,8 @@ def select_picks(
     関心外枠の 1 マスごと（乱数のシードは user＋unlock 文脈＋"|ser"）:
       - `explore_rate`（既定 30%）は**探索**: 関心外の候補から一様にランダム → EXPLORE
       - それ以外はまず**セレンディピティ規則**に当てはまる関心外候補（規則の★4率の高い順）→ SER
-      - 当てはまる候補が無ければ**採点済みの順位**（DRSA 期は DRSA、ランダム期は乱数）→ DRSA / RANDOM
+      - 当てはまる候補が無ければ**採点済みの点数**が最も高い候補（DRSA 期は DRSA、ランダム期は乱数）→ DRSA / RANDOM。
+        同点は visitor_count を使わず参加者ごとの乱数（シードは user＋unlock 文脈＋"|mm-tie"）で選ぶ
     関心外の候補が足りない・候補が空でも落ちない。枠が埋まらなければ全体の順位で埋め、
     それでも足りなければ埋めない (O-4)。引き継ぎ資料の擬似コードは粗いので、
     仕様の文章（上の規則）を優先して実装している。
@@ -230,6 +249,8 @@ def select_picks(
     rule_by_key = {(r.top_category, r.booth_category): r for r in ser_rules}
 
     rng = random.Random(seed_for(user_id, f"{unlock_context}|ser"))
+    # フォールバックの同点決め専用。`rng` から引くと探索の判定列が変わるので分ける
+    tie_rng = random.Random(seed_for(user_id, f"{unlock_context}|mm-tie"))
     chosen: list[Pick] = []
     taken: set[str] = set()
     for _ in range(min(mismatch_quota(k, mm_quota), len(mm))):
@@ -249,7 +270,8 @@ def select_picks(
             if best is not None:
                 pick = Pick(best[0], TAG_SER, SLOT_MISMATCH, best[1])
             else:
-                pick = Pick(remaining[0], _scored_by(remaining[0]), SLOT_MISMATCH)
+                top = _mismatch_fallback(remaining, tie_rng)
+                pick = Pick(top, _scored_by(top), SLOT_MISMATCH)
         chosen.append(pick)
         taken.add(pick.booth.booth_id)
 

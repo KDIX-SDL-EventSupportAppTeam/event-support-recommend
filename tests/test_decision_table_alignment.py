@@ -14,6 +14,7 @@ from conftest import make_request
 from event_support_recommend.cache import RuleCache
 from event_support_recommend.drsa import RuleSet
 from event_support_recommend.engine import _build_context, _runtime_config
+from event_support_recommend.models import VisitSource
 from event_support_recommend.settings import Settings
 from event_support_recommend.snapshot_build import (
     base_rates,
@@ -130,6 +131,39 @@ def test_free_visit_adds_one_to_preference_match():
     )
     assert _rows(t)[0]["preference_match"] == 2
     assert _rows(_tables(**base, cards=cards, cells=cells_pre))[0]["preference_match"] == 2
+
+
+def test_recommend_cell_visit_is_not_a_free_signal_on_both_sides():
+    """推薦マス (RECOMMEND) への訪問は行動信号 B に入らない。決定表と推薦時で一致する (F-2)。
+
+    サーバーは推薦マスへの訪問を source="RECOMMEND" で送る。推薦エンジンはこれを
+    VisitSource.UNKNOWN として扱い、FREE_VISIT と数えない。
+    """
+    cards = [{"id": "card1", "event_id": "A", "user_id": "u1"}]
+    t = _tables(
+        checkins=[("c0", "b2"), ("c2", "b1")],
+        ratings=[("c2", "b1", 4)],
+        cards=cards,
+        cells=[{"card_id": "card1", "booth_id": "b2", "source": "RECOMMEND"}],
+    )
+    assert _rows(t)[0]["preference_match"] == 2  # cat_a の訪問でも B は立たない
+
+    def feats_with(source):
+        req = make_request(
+            user_id="u1",
+            candidate_booths=[{"booth_id": "b1", "category_id": "cat_a", "visitor_count": 1}],
+            visited_booths=[{"booth_id": "b2", "visit_order": 1, "source": source, "category_id": "cat_a"}],
+            rating_scale=4,
+        )
+        ctx = _build_context(req, _runtime_config(_settings()), datetime.now(timezone.utc))
+        expected = {"RECOMMEND": VisitSource.UNKNOWN, "PRESURVEY": VisitSource.PRESURVEY,
+                    "FREE_VISIT": VisitSource.FREE_VISIT}[source]
+        assert ctx.participant.visits[0].source == expected
+        return compute_candidate_features(ctx)["b1"].preference_match
+
+    assert feats_with("RECOMMEND") == 2
+    assert feats_with("PRESURVEY") == 2
+    assert feats_with("FREE_VISIT") == 3  # 対照: 自分で選んだ訪問なら +1
 
 
 def test_missing_bingo_tables_degrade_to_no_free_signal():

@@ -1,6 +1,6 @@
 ---
 状態: 実装済み
-最終更新: 2026-09-02
+最終更新: 2026-10-14
 ---
 
 # 構成と設定値
@@ -138,10 +138,15 @@ DRSA_MIN_COVERAGE=0.5             # 規則が候補を覆う割合
 ### 実験（参加者内ランダム化・[09-research-design.md](09-research-design.md)）
 
 ```
-EXPERIMENT_SPLIT_ENABLED=true     # 品質ゲート通過後にのみ発動する
+EXPERIMENT_SPLIT_ENABLED=false    # 既定 false。参加者内ランダム化は実施しない（ADR 0010 RD-1）
 EXPERIMENT_ARM_A=DRSA
 EXPERIMENT_ARM_B=COVERAGE
 ```
+
+> **2026-10-14**: [ADR 0010](../decisions/adrs/0010-ランダムからDRSAとセレンディピティ規則へ切り替える.md) で
+> 参加者内ランダム化（RD-1）は実施しないと決まり、engine は `split_assigned` を呼ばない。
+> 既定が `true` のままだと `/ops/state` の `experiment.split_active` がゲート通過後に `true`（分割中）と
+> 表示され、実態とずれるため既定を `false` にした。`split_assigned` は将来用に残す。**`true` にしても分割は起きない。**
 
 ### 評価
 

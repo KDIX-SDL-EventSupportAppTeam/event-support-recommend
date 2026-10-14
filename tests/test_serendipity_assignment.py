@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 
 import pytest
 
@@ -247,3 +248,80 @@ def test_ops_state_counts_how_each_cell_was_chosen(client):
     assert used["unlocks"] == 30 and used["slots"] == 120 and used["mismatch_slots"] == 60
     assert sum(used["by_strategy"].values()) == 120
     assert used["by_strategy"]["SER"] > 0 and used["by_strategy"]["EXPLORE"] > 0
+
+
+# --- 関心外枠のフォールバック: 同点を visitor_count で決めない（ADR 0010 追記 2026-10-14）----
+def _tied_mismatch_pool():
+    """関心一致は高得点。関心外は DRSA の点数が全員同じで visitor_count だけ違う（実データで起きる形）。"""
+    out = [sb(f"m{i}", 0.9 - i * 0.01, M, "A") for i in range(6)]
+    out += [sb(f"x{i}", 0.3, X, "Z", vc=i * 5) for i in range(8)]  # x0 が最も空いている
+    return out
+
+
+def _fallback_picks(uid, ctx, scored=None):
+    # SER・探索を切ってフォールバックだけを見る
+    got = picks(scored or _tied_mismatch_pool(), 2, uid=uid, ctx=ctx, explore_rate=0.0)
+    return [p for p in got if p.slot == "MISMATCH_QUOTA"]
+
+
+def test_mismatch_fallback_does_not_pick_the_emptiest_booth_on_ties():
+    chosen = []
+    for i in range(200):
+        (p,) = _fallback_picks(f"user{i}", f"ctx{i % 7}")
+        assert p.tag == "DRSA"  # 記録は今までどおり採点した戦略
+        chosen.append(p.booth.booth_id)
+    counts = {b: chosen.count(b) for b in set(chosen)}
+    # 旧実装（remaining[0]）なら 200 回とも x0（visitor_count 最小）になる
+    assert len(counts) == 8, counts
+    assert counts.get("x0", 0) < 200 * 0.3, counts
+
+
+def test_mismatch_fallback_varies_by_unlock_context_and_is_reproducible():
+    by_ctx = {_fallback_picks("u1", f"ctx{j}")[0].booth.booth_id for j in range(40)}
+    assert len(by_ctx) > 1
+    for j in range(10):
+        a = _fallback_picks("u1", f"ctx{j}")[0].booth.booth_id
+        b = _fallback_picks("u1", f"ctx{j}")[0].booth.booth_id
+        assert a == b
+
+
+def test_mismatch_fallback_prefers_higher_score():
+    scored = _tied_mismatch_pool() + [sb("xbest", 0.31, X, "Z", vc=999)]  # 最も混んでいても点数が上
+    for i in range(50):
+        (p,) = _fallback_picks(f"user{i}", "c", scored)
+        assert p.booth.booth_id == "xbest"
+
+
+def test_mismatch_fallback_does_not_change_explore_decisions():
+    # 同点決め用の乱数は "|ser" と別系統。どの枠が探索になるかは旧実装と同じ乱数列で決まる
+    from event_support_recommend.strategies.base import seed_for
+
+    scored = _tied_mismatch_pool()
+    n_mm = sum(s.interest_match == X for s in scored)
+    for i in range(200):
+        uid, ctx = f"u{i}", f"c{i % 5}"
+        got = [p for p in picks(scored, 6, uid=uid, ctx=ctx) if p.slot == "MISMATCH_QUOTA"]
+        r = random.Random(seed_for(uid, f"{ctx}|ser"))
+        expected = []
+        for n in range(len(got)):
+            exploring = r.random() < 0.3
+            if exploring:
+                r.choice(range(n_mm - n))  # 探索は remaining から 1 回引く
+            expected.append(exploring)
+        assert [p.tag == "EXPLORE" for p in got] == expected
+
+
+def test_ser_still_wins_over_the_fallback():
+    scored = _tied_mismatch_pool() + [sb("y0", 0.3, X, "Y", vc=50)]
+    tags = [p for i in range(50)
+            for p in picks(scored, 2, uid=f"u{i}", explore_rate=0.0, ser_rules=[rule("A", "Y", 0.6)])
+            if p.slot == "MISMATCH_QUOTA"]
+    assert all(p.tag == "SER" and p.booth.booth_id == "y0" for p in tags)
+
+
+def test_rest_slot_order_is_unchanged_by_the_fallback():
+    # REST 枠は従来どおり (-score, visitor_count, jitter)
+    scored = [sb(f"m{i}", 0.9, M, "A", vc=10 - i) for i in range(6)] + _tied_mismatch_pool()[6:]
+    got = picks(scored, 6, uid="u1", explore_rate=0.0)
+    rest = [p.booth.booth_id for p in got if p.slot == "REST"]
+    assert rest == ["m5", "m4", "m3"]

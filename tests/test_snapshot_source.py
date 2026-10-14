@@ -292,7 +292,7 @@ def test_happy_path_builds_snapshot_with_all_tables():
     repo = ProxySnapshotRepository(FakeClient(rows_by_table=rows), default_event_id="ev1")
     snap = repo.fetch()
     assert snap.built is True
-    assert snap.participants == 1  # exhibitor は数えない
+    assert snap.participants == 1  # このイベントに現れるのは u1 だけ
     assert snap.booths == 1
     assert set(LIVE_TABLES) <= set(snap.tables)  # 任意テーブル（bingo_*）も取れていれば入る
     assert snap.decision_table_size is None  # 決定表の組み立ては段3-b
@@ -326,7 +326,7 @@ def test_enabled_attributes_from_dotenv(monkeypatch, tmp_path, raw):
 # 2026-10-12 本番確認の追従
 # --------------------------------------------------------------------------- #
 def test_participants_counts_only_this_event():
-    """users は event_id で絞らないので、他イベントの参加者を数えない。"""
+    """users は event_id で絞らないので、他イベントの人を数えない。ロールは問わない。"""
     rows = {
         "users": [
             {"id": "u1", "role": "participant"},
@@ -337,7 +337,7 @@ def test_participants_counts_only_this_event():
         "user_survey_answers": [{"user_id": "u1", "event_id": "ev1"}],
     }
     snap = ProxySnapshotRepository(FakeClient(rows_by_table=rows), default_event_id="ev1").fetch()
-    assert snap.participants == 1
+    assert snap.participants == 2  # u1 と u_staff（manager でも数える）
 
 
 def test_bingo_cells_scoped_via_bingo_cards():
