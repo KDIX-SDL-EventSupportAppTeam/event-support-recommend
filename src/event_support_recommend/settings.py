@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     drsa_min_coverage: float = 0.5
 
     # --- 実験 (docs/specs/09-research-design.md) ---
-    experiment_split_enabled: bool = True
+    # 参加者内ランダム化（RD-1）は実施しない (ADR 0010)。engine は split_assigned を呼ばないので、
+    # true にしても分割は起きず /ops/state の表示だけが「分割中」になる。将来用に残すが既定は false
+    experiment_split_enabled: bool = False
     experiment_arm_a: str = "DRSA"
     experiment_arm_b: str = "COVERAGE"
 
