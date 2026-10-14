@@ -220,6 +220,26 @@ def test_split_active_false_when_gate_fails(client):
     assert client.get("/ops/state").json()["experiment"]["split_active"] is False
 
 
+def test_split_active_false_by_default_even_after_gate_passes(monkeypatch):
+    # 参加者内ランダム化は実施しない (ADR 0010)。既定のまま、ゲート通過後も「分割中」と報告しない
+    monkeypatch.delenv("EXPERIMENT_SPLIT_ENABLED", raising=False)
+    s = Settings(_env_file=None, enabled_attributes=list(NAMES), drsa_min_rules=1)
+    assert s.experiment_split_enabled is False
+    with TestClient(create_app(s)) as c:
+        c.app.state.rule_cache.put(_rules(), decision_table_size=90, gamma=1.0, base_rate_high=0.5, base_rate_low=0.5)
+        sc = c.app.state.snapshot_cache
+        axes = {"interest_categories": ["hi"], "age_range": "20s", "occupation": "x"}
+        sc.put(decision_table_size=90,
+               surveys={"u1": dict(axes), **{f"n{i}": dict(axes) for i in range(5)}},
+               ratings_by_user={f"n{i}": {"b1": 0.8, "b2": 0.3} for i in range(5)},
+               booth_category={}, global_mean=0.5)
+        resp = c.post("/recommend/cells", json=_payload()).json()
+        assert resp["phase"] == "DRSA"
+        state = c.get("/ops/state").json()
+        assert state["phase"]["quality_gate_passed"] is True
+        assert state["experiment"]["split_active"] is False
+
+
 def test_split_active_true_when_enabled_and_gate_passes():
     s = Settings(_env_file=None, enabled_attributes=list(NAMES),
                  drsa_min_rules=1, experiment_split_enabled=True)
